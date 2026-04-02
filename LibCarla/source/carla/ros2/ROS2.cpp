@@ -257,6 +257,8 @@ void ROS2::ProcessDataFromCamera(
 
   auto base_publisher = GetOrCreateSensor(static_cast<int>(sensor_type), actor);
   auto sensor_publisher = std::dynamic_pointer_cast<CarlaCameraPublisher>(base_publisher);
+  if (!sensor_publisher)
+    return;
   auto transform_publisher = GetOrCreateTransformPublisher(actor);
 
   const carla::sensor::s11n::ImageSerializer::ImageHeader *header =
@@ -282,6 +284,8 @@ void ROS2::ProcessDataFromGNSS(
   
   auto base_publisher = GetOrCreateSensor(ESensors::GnssSensor, actor);
   auto sensor_publisher = std::dynamic_pointer_cast<CarlaGNSSPublisher>(base_publisher);
+  if (!sensor_publisher)
+    return;
   auto transform_publisher = GetOrCreateTransformPublisher(actor);
 
   sensor_publisher->Write(_seconds, _nanoseconds, data);
@@ -303,6 +307,8 @@ void ROS2::ProcessDataFromIMU(
 
   auto base_publisher = GetOrCreateSensor(ESensors::InertialMeasurementUnit, actor);
   auto sensor_publisher = std::dynamic_pointer_cast<CarlaIMUPublisher>(base_publisher);
+  if (!sensor_publisher)
+    return;
   auto transform_publisher = GetOrCreateTransformPublisher(actor);
 
   sensor_publisher->Write(_seconds, _nanoseconds, accelerometer, gyroscope, compass);
@@ -322,6 +328,8 @@ void ROS2::ProcessDataFromDVS(
 
   auto base_publisher = GetOrCreateSensor(ESensors::DVSCamera, actor);
   auto sensor_publisher = std::dynamic_pointer_cast<CarlaDVSPublisher>(base_publisher);
+  if (!sensor_publisher)
+    return;
   auto transform_publisher = GetOrCreateTransformPublisher(actor);
 
   const carla::sensor::s11n::ImageSerializer::ImageHeader *header =
@@ -352,6 +360,8 @@ void ROS2::ProcessDataFromLidar(
 
   auto base_publisher = GetOrCreateSensor(ESensors::RayCastLidar, actor);
   auto sensor_publisher = std::dynamic_pointer_cast<CarlaLidarPublisher>(base_publisher);
+  if (!sensor_publisher)
+    return;
   auto transform_publisher = GetOrCreateTransformPublisher(actor);
 
   // The lidar returns a flat list of floats rather than structured detection points.
@@ -376,6 +386,8 @@ void ROS2::ProcessDataFromSemanticLidar(
 
   auto base_publisher = GetOrCreateSensor(ESensors::RayCastSemanticLidar, actor);
   auto sensor_publisher = std::dynamic_pointer_cast<CarlaSemanticLidarPublisher>(base_publisher);
+  if (!sensor_publisher)
+    return;
   auto transform_publisher = GetOrCreateTransformPublisher(actor);
 
   const uint32_t width = static_cast<uint32_t>(data._ser_points.size());
@@ -397,6 +409,8 @@ void ROS2::ProcessDataFromRadar(
 
   auto base_publisher = GetOrCreateSensor(ESensors::Radar, actor);
   auto sensor_publisher = std::dynamic_pointer_cast<CarlaRadarPublisher>(base_publisher);
+  if (!sensor_publisher)
+    return;
   auto transform_publisher = GetOrCreateTransformPublisher(actor);
 
   const uint32_t width = static_cast<uint32_t>(data.GetDetectionCount());
@@ -429,6 +443,8 @@ void ROS2::ProcessDataFromCollisionSensor(
 
   auto base_publisher = GetOrCreateSensor(ESensors::CollisionSensor, actor);
   auto sensor_publisher = std::dynamic_pointer_cast<CarlaCollisionPublisher>(base_publisher);
+  if (!sensor_publisher)
+    return;
   auto transform_publisher = GetOrCreateTransformPublisher(actor);
 
   sensor_publisher->Write(_seconds, _nanoseconds, other_actor, impulse);
