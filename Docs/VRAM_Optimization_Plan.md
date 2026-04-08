@@ -1,7 +1,7 @@
 # CARLA UE5 VRAM Optimization Plan
 
 **Target:** Enable CARLA 0.10.x to run on 8-12 GB GPUs for typical autonomous driving scenarios
-**Branch:** ue5-dev
+**Branch:** [`ue5-dev`](https://github.com/carla-simulator/carla/tree/ue5-dev) (verified at commit [`2eb47c447`](https://github.com/carla-simulator/carla/commit/2eb47c447afab05b2a1f8de3ac0b59cd691c317b))
 **Date:** 2026-04-08
 
 ---
@@ -20,15 +20,15 @@ Measured on RTX 5090 (32 GB), Shipping build, headless (`-RenderOffScreen`), nvi
 
 **Root causes identified (in order of impact):**
 
-1. **Camera sensor render targets** — Each camera allocates ~4.6 GB of shared rendering infrastructure on first spawn (GBuffer, render targets, post-process chain). 6-camera surround adds ~8.1 GB total. Each camera also forces per-view BVH traversal (`bUseRayTracingIfEnabled=true`).
+1. **Camera sensor render targets** — Each camera allocates ~4.6 GB of shared rendering infrastructure on first spawn (GBuffer, render targets, post-process chain). 6-camera surround adds ~8.1 GB total. Each camera also forces per-view BVH traversal ([`bUseRayTracingIfEnabled=true`][scs-71]).
 
-2. **HW Ray Tracing enabled by default** — `r.Lumen.HardwareRayTracing=True` and `r.RayTracing.Shadows=True` force BVH acceleration structure construction, adding ~1-2 GB.
+2. **HW Ray Tracing enabled by default** — [`r.Lumen.HardwareRayTracing=True`][ini-48] and [`r.RayTracing.Shadows=True`][ini-51] force BVH acceleration structure construction, adding ~1-2 GB.
 
-3. **Monolithic map loading** — Town15 loads all 480 actors into GPU memory simultaneously. No World Partition. LargeMapManager exists (1,148 lines) but uses UE4-era `ULevelStreamingDynamic`, not UE5 native World Partition.
+3. **Monolithic map loading** — Town15 loads all 480 actors into GPU memory simultaneously. No World Partition. [`LargeMapManager`][lmm] exists (1,148 lines) but uses UE4-era `ULevelStreamingDynamic`, not UE5 native World Partition.
 
-4. **UE4-era quality presets** — Low and Epic quality commands (`CarlaSettingsDelegate.cpp`) set ~30 CVars from UE4 but none for UE5 features (Nanite, Lumen, Virtual Shadow Maps). Low mode with 6 cameras uses MORE VRAM than Epic.
+4. **UE4-era quality presets** — Low and Epic quality commands ([`CarlaSettingsDelegate.cpp`][csd]) set ~30 CVars from UE4 but none for UE5 features (Nanite, Lumen, Virtual Shadow Maps). Low mode with 6 cameras uses MORE VRAM than Epic.
 
-5. **No UE5 scalability groups** — `DefaultScalability.ini` contains only `r.EyeAdaptationQuality`. No entries for shadows, GI, reflections, Nanite, or texture streaming quality groups.
+5. **No UE5 scalability groups** — [`DefaultScalability.ini`][dsi] contains only `r.EyeAdaptationQuality`. No entries for shadows, GI, reflections, Nanite, or texture streaming quality groups.
 
 ---
 
@@ -38,9 +38,9 @@ Expected outcome: Town10 + 3 cameras fits in 10-12 GB. Low mode regression fixed
 
 ### 1.1 Disable Lumen HW RT and RT Shadows by Default
 
-**Files:** `Unreal/CarlaUnreal/Config/DefaultEngine.ini`
+**Files:** [`Unreal/CarlaUnreal/Config/DefaultEngine.ini`][ini]
 
-Change the following defaults. Keep `r.RayTracing=True` (controls shader compilation; required for opt-in):
+Change the following defaults. Keep [`r.RayTracing=True`][ini-47] (controls shader compilation; required for opt-in):
 
 ```diff
 - r.Lumen.HardwareRayTracing=True
@@ -65,7 +65,7 @@ Lumen continues to work via Software Ray Tracing (SDF-based). Users opt-in to HW
 
 ### 1.2 Disable Per-Camera Ray Tracing
 
-**Files:** `Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/SceneCaptureSensor.cpp`
+**Files:** [`Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/SceneCaptureSensor.cpp`][scs]
 
 ```diff
 - CaptureComponent2D->bUseRayTracingIfEnabled = true;   // line 71
@@ -78,9 +78,9 @@ Prevents each `USceneCaptureComponent2D` from forcing per-view BVH traversal. Ca
 
 ### 1.3 Add UE5 CVars to Low Quality Level
 
-**Files:** `Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Settings/CarlaSettingsDelegate.cpp`
+**Files:** [`Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Settings/CarlaSettingsDelegate.cpp`][csd]
 
-Append to `LaunchLowQualityCommands()` (after line 228):
+Append to [`LaunchLowQualityCommands()`][csd-174] (after [line 228][csd-228]):
 
 ```cpp
 // UE5-specific: aggressive VRAM reduction for 8 GB target
@@ -101,9 +101,9 @@ GEngine->Exec(world, TEXT("r.GenerateMeshDistanceFields 0"));
 
 ### 1.4 Add UE5 CVars to Epic Quality Level
 
-**Files:** `Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Settings/CarlaSettingsDelegate.cpp`
+**Files:** [`Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Settings/CarlaSettingsDelegate.cpp`][csd]
 
-Append to `LaunchEpicQualityCommands()` (after line 418):
+Append to [`LaunchEpicQualityCommands()`][csd-376] (after [line 418][csd-418]):
 
 ```cpp
 // UE5-specific: Lumen SW RT with proper budgets for 16+ GB target
@@ -121,7 +121,7 @@ GEngine->Exec(world, TEXT("r.GenerateMeshDistanceFields 1"));
 
 ### 1.5 Add UE5 Scalability Groups
 
-**Files:** `Unreal/CarlaUnreal/Config/DefaultScalability.ini`
+**Files:** [`Unreal/CarlaUnreal/Config/DefaultScalability.ini`][dsi]
 
 Add quality group overrides for Shadow (VSM pages), GlobalIllumination (Lumen method), Reflection, ViewDistance (Nanite quality/pool), and Texture (streaming pool) across @0 (Low) through @3 (Epic) tiers. This ensures `sg.*` console commands and UE5's built-in scalability menu properly control VRAM-impacting features.
 
@@ -136,10 +136,10 @@ Expected outcome: First camera overhead reduced from ~4.6 GB to ~2-3 GB. 6-camer
 The ~4.6 GB spike for the first camera is caused by UE5's `SceneCaptureComponent2D` allocating a full rendering pipeline (GBuffer, post-process chain, Lumen scene structures). Investigate whether:
 
 - A shared render target pool can be used across cameras
-- GBuffer allocation can be deferred until first capture (currently allocated at `BeginPlay`)
+- GBuffer allocation can be deferred until first capture (currently allocated at [`BeginPlay`][scs-874])
 - Post-processing can be conditionally disabled per sensor type
 
-**Files:** `SceneCaptureSensor.cpp`, `SceneCaptureSensor.h`, `SceneCaptureComponent2D_CARLA`
+**Files:** [`SceneCaptureSensor.cpp`][scs], [`SceneCaptureSensor.h`][scs-h], [`SceneCaptureComponent2D_CARLA`][scc2d]
 
 ### 2.2 Disable Post-Processing for Non-Visual Sensors
 
@@ -155,11 +155,11 @@ Add quality-level-aware resolution scaling for camera sensors:
 - Low quality: cap at 720p equivalent, use TSR upscaling
 - Epic quality: native resolution (current behavior)
 
-This requires modifying `SceneCaptureSensor::BeginPlay()` to query the current quality level and adjust `ImageWidth`/`ImageHeight` before `CaptureRenderTarget->InitCustomFormat()`.
+This requires modifying [`SceneCaptureSensor::BeginPlay()`][scs-874] to query the current quality level and adjust [`ImageWidth`/`ImageHeight`][scs-h-601] before [`CaptureRenderTarget->InitCustomFormat()`][scs-881].
 
 ### 2.4 Re-enable Medium Quality Level
 
-Restore the `Medium` quality level (currently commented out in `QualityLevelUE.h` and `rpc/QualityLevel.h`) with UE5-appropriate settings targeting 12 GB VRAM.
+Restore the `Medium` quality level (currently commented out in [`QualityLevelUE.h`][qlue] and [`rpc/QualityLevel.h`][rpc-ql]) with UE5-appropriate settings targeting 12 GB VRAM.
 
 **Consideration:** Uncommenting `Medium` changes the RPC enum integer layout — `Epic` shifts from value 1 to 3. This requires a coordinated Python API update and should be released as a minor version bump to avoid breaking existing scripts.
 
@@ -171,7 +171,7 @@ Expected outcome: Town15 fits in 8-10 GB. Maps only load 30-40% of assets at any
 
 ### 3.1 Background
 
-UE5's World Partition divides large maps into grid cells and streams only those near the camera. CARLA does not use it. The current LargeMapManager (1,148 lines, 27 file references) provides tile streaming via `ULevelStreamingDynamic` and `WorldComposition`, but this is a UE4-era approach that:
+UE5's World Partition divides large maps into grid cells and streams only those near the camera. CARLA does not use it. The current [`LargeMapManager`][lmm] (1,148 lines, [27 file references][lmm-refs]) provides tile streaming via `ULevelStreamingDynamic` and `WorldComposition`, but this is a UE4-era approach that:
 
 - Does not integrate with UE5's native HLOD system
 - Does not benefit from UE5's optimized streaming scheduler
@@ -300,8 +300,34 @@ After each phase, validate with the following test matrix (nvidia-smi, headless 
 
 ## Related GitHub Issues
 
-- #8964 — CARLA UE5 out of memory (Vulkan OOM on <16 GB GPUs)
-- #7379 — UE5 Reimplement MapLayers / World Partition migration
-- #8395 — Performance Loss in UE5.5 (FlushRenderingCommands)
-- #8575 — GPU memory crashes on 8-12 GB cards
-- Discussion #8525 — Vulkan memory error with CARLA 0.10.0
+- [#8964](https://github.com/carla-simulator/carla/issues/8964) — CARLA UE5 out of memory (Vulkan OOM on <16 GB GPUs)
+- [#7379](https://github.com/carla-simulator/carla/issues/7379) — UE5 Reimplement MapLayers / World Partition migration
+- [#8395](https://github.com/carla-simulator/carla/issues/8395) — Performance Loss in UE5.5 (FlushRenderingCommands)
+- [#8575](https://github.com/carla-simulator/carla/issues/8575) — GPU memory crashes on 8-12 GB cards
+- [Discussion #8525](https://github.com/carla-simulator/carla/discussions/8525) — Vulkan memory error with CARLA 0.10.0
+
+---
+
+<!-- GitHub source links (ue5-dev branch, commit 2eb47c447) -->
+[ini]: https://github.com/carla-simulator/carla/blob/ue5-dev/Unreal/CarlaUnreal/Config/DefaultEngine.ini
+[ini-47]: https://github.com/carla-simulator/carla/blob/ue5-dev/Unreal/CarlaUnreal/Config/DefaultEngine.ini#L47
+[ini-48]: https://github.com/carla-simulator/carla/blob/ue5-dev/Unreal/CarlaUnreal/Config/DefaultEngine.ini#L48
+[ini-51]: https://github.com/carla-simulator/carla/blob/ue5-dev/Unreal/CarlaUnreal/Config/DefaultEngine.ini#L51
+[dsi]: https://github.com/carla-simulator/carla/blob/ue5-dev/Unreal/CarlaUnreal/Config/DefaultScalability.ini
+[csd]: https://github.com/carla-simulator/carla/blob/ue5-dev/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Settings/CarlaSettingsDelegate.cpp
+[csd-174]: https://github.com/carla-simulator/carla/blob/ue5-dev/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Settings/CarlaSettingsDelegate.cpp#L174
+[csd-228]: https://github.com/carla-simulator/carla/blob/ue5-dev/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Settings/CarlaSettingsDelegate.cpp#L228
+[csd-376]: https://github.com/carla-simulator/carla/blob/ue5-dev/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Settings/CarlaSettingsDelegate.cpp#L376
+[csd-418]: https://github.com/carla-simulator/carla/blob/ue5-dev/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Settings/CarlaSettingsDelegate.cpp#L418
+[qlue]: https://github.com/carla-simulator/carla/blob/ue5-dev/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Settings/QualityLevelUE.h
+[rpc-ql]: https://github.com/carla-simulator/carla/blob/ue5-dev/LibCarla/source/carla/rpc/QualityLevel.h
+[scs]: https://github.com/carla-simulator/carla/blob/ue5-dev/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/SceneCaptureSensor.cpp
+[scs-71]: https://github.com/carla-simulator/carla/blob/ue5-dev/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/SceneCaptureSensor.cpp#L71
+[scs-874]: https://github.com/carla-simulator/carla/blob/ue5-dev/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/SceneCaptureSensor.cpp#L874
+[scs-881]: https://github.com/carla-simulator/carla/blob/ue5-dev/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/SceneCaptureSensor.cpp#L881
+[scs-h]: https://github.com/carla-simulator/carla/blob/ue5-dev/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/SceneCaptureSensor.h
+[scs-h-553]: https://github.com/carla-simulator/carla/blob/ue5-dev/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/SceneCaptureSensor.h#L553
+[scs-h-601]: https://github.com/carla-simulator/carla/blob/ue5-dev/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/SceneCaptureSensor.h#L601
+[scc2d]: https://github.com/carla-simulator/carla/blob/ue5-dev/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/UE4_Overridden/SceneCaptureComponent2D_CARLA.h
+[lmm]: https://github.com/carla-simulator/carla/blob/ue5-dev/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/MapGen/LargeMapManager.cpp
+[lmm-refs]: https://github.com/carla-simulator/carla/search?q=LargeMapManager&type=code

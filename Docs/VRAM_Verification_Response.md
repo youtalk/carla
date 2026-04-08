@@ -1,7 +1,7 @@
 # CARLA UE5 VRAM Executive Summary — Source Code Verification Report
 
 **In response to:** "CARLA UE5 VRAM Executive Summary" (Anaya, April 2026)
-**Verified against:** ue5-dev branch, commit 815b8ba2c
+**Verified against:** [`ue5-dev` branch](https://github.com/carla-simulator/carla/tree/ue5-dev), commit [`2eb47c447`](https://github.com/carla-simulator/carla/commit/2eb47c447afab05b2a1f8de3ac0b59cd691c317b)
 **Date:** 2026-04-08
 
 ---
@@ -14,9 +14,9 @@ However, **the three core numeric claims that underpin the document's quantitati
 
 | Claim in PDF | Actual Value in Source | File & Line | Impact on Analysis |
 |---|---|---|---|
-| `r.Streaming.PoolSize = 14000` | INI: 4000, Runtime: **2000** | DefaultEngine.ini:30, CarlaSettingsDelegate.cpp:189,386 | PDF's #1 recommendation (reduce PoolSize) has **zero effect** — the runtime value already undercuts the PDF's own target of 4096-6144 |
+| `r.Streaming.PoolSize = 14000` | INI: 4000, Runtime: **2000** | [`DefaultEngine.ini:30`][ini-30], [`CarlaSettingsDelegate.cpp:189`][csd-189], [`:386`][csd-386] | PDF's #1 recommendation (reduce PoolSize) has **zero effect** — the runtime value already undercuts the PDF's own target of 4096-6144 |
 | `r.SetRes = 3840x2160f` | **Not set anywhere** in the codebase | Full codebase grep: 0 matches | 4K is not the default resolution; the 0.8-1.5 GB GBuffer savings claim is invalid |
-| `r.SkinCache.SceneMemoryLimitInMB = 2048` | **1024** | DefaultEngine.ini:57 | Already half the claimed value; the 1-1.5 GB savings estimate is halved |
+| `r.SkinCache.SceneMemoryLimitInMB = 2048` | **1024** | [`DefaultEngine.ini:57`][ini-57] | Already half the claimed value; the 1-1.5 GB savings estimate is halved |
 
 Furthermore, the document's estimated VRAM budget ceiling of 20-23 GB is not supported by code evidence. With the actual CVar values, the theoretical ceiling is significantly lower.
 
@@ -32,12 +32,12 @@ Furthermore, the document's estimated VRAM budget ceiling of 20-23 GB is not sup
 
 **Actual code:**
 
-`Unreal/CarlaUnreal/Config/DefaultEngine.ini`, line 30:
+[`Unreal/CarlaUnreal/Config/DefaultEngine.ini`][ini], line 30:
 ```ini
 r.Streaming.PoolSize=4000
 ```
 
-`Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Settings/CarlaSettingsDelegate.cpp`, lines 189 and 386:
+[`Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Settings/CarlaSettingsDelegate.cpp`][csd], lines 189 and 386:
 ```cpp
 // In LaunchLowQualityCommands() — line 189:
 GEngine->Exec(world, TEXT("r.Streaming.PoolSize 2000"));
@@ -58,7 +58,7 @@ The 14000 value may have appeared in an earlier development build or branch, but
 
 **Actual code:** A comprehensive search of all `.ini` files, C++ source files, and command-line argument handling reveals **zero occurrences** of `r.SetRes` anywhere in the CARLA codebase.
 
-`Unreal/CarlaUnreal/Config/DefaultGameUserSettings.ini` contains only:
+[`Unreal/CarlaUnreal/Config/DefaultGameUserSettings.ini`][dgus] contains only:
 ```ini
 FullscreenMode=2
 ```
@@ -75,7 +75,7 @@ FullscreenMode=2
 
 **Actual code:**
 
-`Unreal/CarlaUnreal/Config/DefaultEngine.ini`, line 57:
+[`Unreal/CarlaUnreal/Config/DefaultEngine.ini`][ini], line 57:
 ```ini
 r.SkinCache.SceneMemoryLimitInMB=1024
 ```
@@ -90,7 +90,7 @@ r.SkinCache.SceneMemoryLimitInMB=1024
 
 **Actual code confirms this claim:**
 
-`Unreal/CarlaUnreal/Config/DefaultEngine.ini`:
+[`Unreal/CarlaUnreal/Config/DefaultEngine.ini`][ini]:
 ```ini
 r.RayTracing=True                                    # line 47
 r.Lumen.HardwareRayTracing=True                      # line 48
@@ -119,11 +119,11 @@ r.Lumen.HardwareRayTracing.HitLighting.Skylight=1   # line 63
 
 **Actual code:**
 
-`Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/MapGen/LargeMapManager.cpp` — **1,148 lines** of functional code. It implements tile-based level streaming using `ULevelStreamingDynamic` with `WorldComposition`. It is actively referenced by **27 files** across the codebase, including:
-- `CarlaGameModeBase.cpp` (initialization)
-- `CarlaEngine.cpp` (streaming distance sync)
-- `CarlaEpisode.cpp` (actor registration)
-- `GnssSensor.cpp` (coordinate transforms)
+[`Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/MapGen/LargeMapManager.cpp`][lmm] — **1,148 lines** of functional code. It implements tile-based level streaming using `ULevelStreamingDynamic` with `WorldComposition`. It is actively referenced by **27 files** across the codebase, including:
+- [`CarlaGameModeBase.cpp`][cgm] (initialization)
+- [`CarlaEngine.cpp`][ce] (streaming distance sync)
+- [`CarlaEpisode.cpp`][cep] (actor registration)
+- [`GnssSensor.cpp`][gnss] (coordinate transforms)
 - Multiple traffic and vehicle components
 
 Key features:
@@ -141,7 +141,7 @@ Key features:
 
 **Actual code:**
 
-`Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Settings/QualityLevelUE.h`:
+[`Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Settings/QualityLevelUE.h`][qlue]:
 ```cpp
 enum class EQualityLevel : uint8
 {
@@ -154,7 +154,7 @@ enum class EQualityLevel : uint8
 };
 ```
 
-`CarlaSettingsDelegate.cpp` implements `LaunchLowQualityCommands()` (lines 174-230) and `LaunchEpicQualityCommands()` (lines 376-419), each setting ~30 CVars at runtime. These are accessible via:
+[`CarlaSettingsDelegate.cpp`][csd] implements [`LaunchLowQualityCommands()`][csd-174] (lines 174-230) and [`LaunchEpicQualityCommands()`][csd-376] (lines 376-419), each setting ~30 CVars at runtime. These are accessible via:
 - Python API: `world.apply_settings(carla.WorldSettings(quality_level=carla.QualityLevel.Low))`
 - Command line: `-quality-level=Low`
 
@@ -177,7 +177,7 @@ The Executive Summary does not mention camera sensors as a VRAM factor. Our meas
 
 The first camera triggers ~4.6 GB of shared rendering resource allocation (GBuffer, render targets, post-process chain). Subsequent cameras add ~700-1,000 MB each.
 
-**Root cause in code:** Each `ASceneCaptureSensor` creates its own `USceneCaptureComponent2D_CARLA` with `bUseRayTracingIfEnabled = true` (SceneCaptureSensor.cpp:71), meaning every camera forces per-view BVH traversal when HW RT is active. Each camera also maintains an independent set of 13 GBuffer data streams (SceneCaptureSensor.h:553-568).
+**Root cause in code:** Each `ASceneCaptureSensor` creates its own `USceneCaptureComponent2D_CARLA` with [`bUseRayTracingIfEnabled = true`][scs-71] ([SceneCaptureSensor.cpp:71][scs-71]), meaning every camera forces per-view BVH traversal when HW RT is active. Each camera also maintains an independent set of [13 GBuffer data streams][scs-h-553] ([SceneCaptureSensor.h:553-568][scs-h-553]).
 
 A typical autonomous driving scenario (Town10, 30 vehicles, 3 cameras, LiDAR) reaches ~13 GB — **this is the actual mechanism behind the 16 GB minimum requirement**, not the texture streaming pool.
 
@@ -187,9 +187,9 @@ A typical autonomous driving scenario (Town10, 30 vehicles, 3 cameras, LiDAR) re
 
 | Component | PDF Estimate | Measured Value | Source |
 |---|---|---|---|
-| Texture streaming pool | Up to 14 GB | **2,000 MiB** (runtime override) | CarlaSettingsDelegate.cpp:189,386 |
+| Texture streaming pool | Up to 14 GB | **2,000 MiB** (runtime override) | [`CarlaSettingsDelegate.cpp:189,386`][csd-189] |
 | Default resolution overhead | 1-1.5 GB (4K) | **OS-dependent** (not set by CARLA) | No r.SetRes in codebase |
-| Skin cache | Up to 2 GB | **1,024 MiB** | DefaultEngine.ini:57 |
+| Skin cache | Up to 2 GB | **1,024 MiB** | [`DefaultEngine.ini:57`][ini-57] |
 | Town10 map (geometry + textures + Nanite + Lumen) | Not estimated | **~6,500 MiB** | nvidia-smi after map stabilization |
 | First camera sensor (shared RT init) | Not mentioned | **~4,500 MiB** | nvidia-smi delta: 0 → 1 camera |
 | Additional cameras (per unit) | Not mentioned | **~700-1,000 MiB** | nvidia-smi delta per camera |
@@ -224,3 +224,24 @@ However, the quantitative foundation of the analysis contains critical errors:
 - The largest actual VRAM consumer (camera sensor RT allocation) is entirely unaddressed
 
 We recommend that any optimization efforts follow the revised priority order above, beginning with HW RT default changes and camera sensor improvements rather than texture streaming pool adjustments.
+
+---
+
+<!-- GitHub source links (ue5-dev branch, commit 2eb47c447) -->
+[ini]: https://github.com/carla-simulator/carla/blob/ue5-dev/Unreal/CarlaUnreal/Config/DefaultEngine.ini
+[ini-30]: https://github.com/carla-simulator/carla/blob/ue5-dev/Unreal/CarlaUnreal/Config/DefaultEngine.ini#L30
+[ini-57]: https://github.com/carla-simulator/carla/blob/ue5-dev/Unreal/CarlaUnreal/Config/DefaultEngine.ini#L57
+[dgus]: https://github.com/carla-simulator/carla/blob/ue5-dev/Unreal/CarlaUnreal/Config/DefaultGameUserSettings.ini
+[csd]: https://github.com/carla-simulator/carla/blob/ue5-dev/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Settings/CarlaSettingsDelegate.cpp
+[csd-174]: https://github.com/carla-simulator/carla/blob/ue5-dev/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Settings/CarlaSettingsDelegate.cpp#L174
+[csd-189]: https://github.com/carla-simulator/carla/blob/ue5-dev/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Settings/CarlaSettingsDelegate.cpp#L189
+[csd-376]: https://github.com/carla-simulator/carla/blob/ue5-dev/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Settings/CarlaSettingsDelegate.cpp#L376
+[csd-386]: https://github.com/carla-simulator/carla/blob/ue5-dev/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Settings/CarlaSettingsDelegate.cpp#L386
+[qlue]: https://github.com/carla-simulator/carla/blob/ue5-dev/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Settings/QualityLevelUE.h
+[lmm]: https://github.com/carla-simulator/carla/blob/ue5-dev/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/MapGen/LargeMapManager.cpp
+[cgm]: https://github.com/carla-simulator/carla/blob/ue5-dev/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Game/CarlaGameModeBase.cpp
+[ce]: https://github.com/carla-simulator/carla/blob/ue5-dev/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Server/CarlaEngine.cpp
+[cep]: https://github.com/carla-simulator/carla/blob/ue5-dev/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Game/CarlaEpisode.cpp
+[gnss]: https://github.com/carla-simulator/carla/blob/ue5-dev/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/GnssSensor.cpp
+[scs-71]: https://github.com/carla-simulator/carla/blob/ue5-dev/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/SceneCaptureSensor.cpp#L71
+[scs-h-553]: https://github.com/carla-simulator/carla/blob/ue5-dev/Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/SceneCaptureSensor.h#L553
