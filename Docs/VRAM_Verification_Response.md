@@ -10,7 +10,7 @@
 
 Thank you for the thorough analysis. The Executive Summary correctly identifies that CARLA UE5 has a VRAM accessibility problem and that architectural gaps (HW Ray Tracing defaults, lack of World Partition, incomplete scalability infrastructure) are key contributing factors. These qualitative observations are well-reasoned and have guided our own investigation.
 
-When cross-referencing the numeric claims against the current `ue5-dev` source code, however, **three core values do not match what we find in the codebase**. It is possible that these values were observed in a different build configuration, an earlier snapshot of the branch, or a runtime state that differs from the checked-in defaults:
+When cross-referencing the numeric claims against the current `ue5-dev` source code, however, **three core values do not match what I find in the codebase**. It is possible that these values were observed in a different build configuration, an earlier snapshot of the branch, or a runtime state that differs from the checked-in defaults:
 
 | Value in PDF | Value Found in Source | File & Line | Implication |
 |---|---|---|---|
@@ -65,7 +65,7 @@ FullscreenMode=2
 
 `FullscreenMode=2` is windowed fullscreen — the resolution is determined by the OS window manager, not by CARLA.
 
-**Verdict: Not found in source.** We could not locate this CVar in the current codebase. The actual resolution appears to depend on the display environment. In headless mode (`-RenderOffScreen`), resolution is controlled by Vulkan surface dimensions. It is possible this setting was present in an earlier version or applied through an external configuration not checked into the repository.
+**Verdict: Not found in source.** I could not locate this CVar in the current codebase. The actual resolution appears to depend on the display environment. In headless mode (`-RenderOffScreen`), resolution is controlled by Vulkan surface dimensions. It is possible this setting was present in an earlier version or applied through an external configuration not checked into the repository.
 
 ---
 
@@ -200,7 +200,7 @@ A typical autonomous driving scenario (Town10, 30 vehicles, 3 cameras, LiDAR) re
 
 ## 5. Revised Optimization Priority
 
-Building on the Executive Summary's recommendations and incorporating the source code and measurement findings, we propose the following revised priority order:
+Building on the Executive Summary's recommendations and incorporating the source code and measurement findings, I propose the following revised priority order:
 
 | Priority | Action | Expected Impact | PDF Priority |
 |---|---|---|---|
@@ -215,13 +215,13 @@ Building on the Executive Summary's recommendations and incorporating the source
 
 ## 6. Conclusion
 
-The Executive Summary provides a valuable and well-structured analysis of CARLA's VRAM accessibility challenge. Its architectural observations — HW Ray Tracing enabled by default, absence of World Partition, and incomplete scalability infrastructure — are confirmed by the source code and directly actionable. The tiered optimization framework (configuration changes, engineering work, architectural migration) is a practical approach that we have adopted in our own improvement plan.
+The Executive Summary provides a valuable and well-structured analysis of CARLA's VRAM accessibility challenge. Its architectural observations — HW Ray Tracing enabled by default, absence of World Partition, and incomplete scalability infrastructure — are confirmed by the source code and directly actionable. The tiered optimization framework (configuration changes, engineering work, architectural migration) is a practical approach that I have adopted in our own improvement plan.
 
 Our source code verification found that three numeric values differ from what is reported (PoolSize, SetRes, SkinCache). These discrepancies may stem from differences in build configuration, branch state, or runtime measurement methodology. Regardless of the source of the discrepancy, the practical implication is that the PoolSize reduction — identified as the highest-ROI action — would not yield additional savings given the current runtime value of 2000 MB.
 
 Our runtime profiling also surfaced camera sensor render target allocation as a substantial VRAM factor (~4.6 GB for the first camera) that complements the engine-level analysis in the Executive Summary. Incorporating this finding into the optimization roadmap would provide a more complete path toward 8-12 GB GPU compatibility.
 
-We look forward to collaborating on the optimization effort and would be happy to share our measurement methodology and test scripts for further validation.
+I look forward to collaborating on the optimization effort and would be happy to share our measurement methodology and test scripts for further validation.
 
 ---
 
