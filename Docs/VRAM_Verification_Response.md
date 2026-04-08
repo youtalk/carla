@@ -8,19 +8,19 @@
 
 ## 1. Executive Summary of Findings
 
-The Executive Summary correctly identifies that CARLA UE5 has a VRAM accessibility problem and that architectural gaps (HW Ray Tracing defaults, lack of World Partition, incomplete scalability infrastructure) are contributing factors. These qualitative observations are sound and well-reasoned.
+Thank you for the thorough analysis. The Executive Summary correctly identifies that CARLA UE5 has a VRAM accessibility problem and that architectural gaps (HW Ray Tracing defaults, lack of World Partition, incomplete scalability infrastructure) are key contributing factors. These qualitative observations are well-reasoned and have guided our own investigation.
 
-However, **the three core numeric claims that underpin the document's quantitative analysis and prioritization are all factually incorrect** when verified against the actual source code:
+When cross-referencing the numeric claims against the current `ue5-dev` source code, however, **three core values do not match what we find in the codebase**. It is possible that these values were observed in a different build configuration, an earlier snapshot of the branch, or a runtime state that differs from the checked-in defaults:
 
-| Claim in PDF | Actual Value in Source | File & Line | Impact on Analysis |
+| Value in PDF | Value Found in Source | File & Line | Implication |
 |---|---|---|---|
-| `r.Streaming.PoolSize = 14000` | INI: 4000, Runtime: **2000** | [`DefaultEngine.ini:30`][ini-30], [`CarlaSettingsDelegate.cpp:189`][csd-189], [`:386`][csd-386] | PDF's #1 recommendation (reduce PoolSize) has **zero effect** — the runtime value already undercuts the PDF's own target of 4096-6144 |
-| `r.SetRes = 3840x2160f` | **Not set anywhere** in the codebase | Full codebase grep: 0 matches | 4K is not the default resolution; the 0.8-1.5 GB GBuffer savings claim is invalid |
-| `r.SkinCache.SceneMemoryLimitInMB = 2048` | **1024** | [`DefaultEngine.ini:57`][ini-57] | Already half the claimed value; the 1-1.5 GB savings estimate is halved |
+| `r.Streaming.PoolSize = 14000` | INI: 4000, Runtime: **2000** | [`DefaultEngine.ini:30`][ini-30], [`CarlaSettingsDelegate.cpp:189`][csd-189], [`:386`][csd-386] | The recommended PoolSize reduction (to 4096-6144) would have no additional effect, since the runtime value is already lower |
+| `r.SetRes = 3840x2160f` | **Not set anywhere** in the current codebase | Full codebase grep: 0 matches | Resolution is OS-dependent; the GBuffer savings estimate may not apply |
+| `r.SkinCache.SceneMemoryLimitInMB = 2048` | **1024** | [`DefaultEngine.ini:57`][ini-57] | Half the reported value; savings estimate should be adjusted accordingly |
 
-Furthermore, the document's estimated VRAM budget ceiling of 20-23 GB is not supported by code evidence. With the actual CVar values, the theoretical ceiling is significantly lower.
+With the values found in the current source, the estimated VRAM budget ceiling of 20-23 GB would need to be revised downward.
 
-**Most critically, the PDF completely overlooks the single largest VRAM consumer in a typical autonomous driving scenario: camera sensor render target allocation.** Each camera sensor triggers ~4.6 GB of VRAM allocation for its first instance (GBuffer, render targets, post-process chain), and a typical 6-camera surround setup pushes total VRAM to ~16.2 GB — regardless of texture pool size. This finding reorders the entire optimization priority.
+Additionally, our runtime measurements revealed a significant VRAM factor not covered in the Executive Summary: **camera sensor render target allocation**. Each camera sensor triggers ~4.6 GB of VRAM allocation for its first instance (GBuffer, render targets, post-process chain), and a typical 6-camera surround setup pushes total VRAM to ~16.2 GB — regardless of texture pool settings. This finding suggests a revised optimization priority that addresses camera sensors alongside the architectural issues already identified in the PDF.
 
 ---
 
@@ -46,9 +46,9 @@ GEngine->Exec(world, TEXT("r.Streaming.PoolSize 2000"));
 GEngine->Exec(world, TEXT("r.Streaming.PoolSize 2000"));
 ```
 
-**Verdict: FALSE.** The INI value is 4000 (not 14000), and both quality levels override it to 2000 at runtime. The effective streaming pool is **2000 MB** — already below the PDF's own recommended target of 4096-6144 MB. The PDF's "highest-ROI action" of reducing PoolSize would have zero effect on actual VRAM consumption.
+**Verdict: Differs from source.** The INI value is 4000 (not 14000), and both quality levels override it to 2000 at runtime. The effective streaming pool is **2000 MB** — already below the recommended target of 4096-6144 MB. This means that reducing PoolSize further would not yield additional savings.
 
-The 14000 value may have appeared in an earlier development build or branch, but it does not exist in the current ue5-dev branch at commit 815b8ba2c.
+It is possible the 14000 value was observed in a different build, an earlier commit, or a runtime configuration where the quality-level overrides had not yet executed. In the current `ue5-dev` branch, the checked-in value is 4000 and the effective runtime value is 2000.
 
 ---
 
@@ -65,7 +65,7 @@ FullscreenMode=2
 
 `FullscreenMode=2` is windowed fullscreen — the resolution is determined by the OS window manager, not by CARLA.
 
-**Verdict: FALSE.** CARLA does not set a default resolution. The actual resolution depends on the display environment. In headless mode (`-RenderOffScreen`), resolution is controlled by Vulkan surface dimensions, not by any `r.SetRes` CVar.
+**Verdict: Not found in source.** We could not locate this CVar in the current codebase. The actual resolution appears to depend on the display environment. In headless mode (`-RenderOffScreen`), resolution is controlled by Vulkan surface dimensions. It is possible this setting was present in an earlier version or applied through an external configuration not checked into the repository.
 
 ---
 
@@ -80,7 +80,7 @@ FullscreenMode=2
 r.SkinCache.SceneMemoryLimitInMB=1024
 ```
 
-**Verdict: FALSE.** The actual value is 1024, exactly half the claimed 2048. While there may still be room to reduce this, the savings estimate should be revised downward.
+**Verdict: Differs from source.** The value in the current INI is 1024, half the reported 2048. Reducing this further (as the PDF suggests) is still a valid optimization, but the baseline and expected savings should be adjusted accordingly.
 
 ---
 
@@ -131,7 +131,7 @@ Key features:
 - Actor dormancy management (active/dormant based on distance)
 - World origin rebasing for large coordinate spaces
 
-**Verdict: FALSE.** LargeMapManager exists, is functional, and is actively integrated. It uses UE4-era `ULevelStreamingDynamic` (not UE5 World Partition), but it is not "unported" — it has been adapted to work within the UE5 build. However, it does not use UE5's native World Partition system, which is the more efficient approach.
+**Verdict: Partially accurate.** LargeMapManager does exist and is actively integrated in the UE5 build, so describing it as "not ported" may be misleading. That said, the PDF's broader point stands: the system uses UE4-era `ULevelStreamingDynamic` rather than UE5's native World Partition, and migrating to World Partition remains a valuable goal for VRAM reduction.
 
 ---
 
@@ -162,9 +162,9 @@ enum class EQualityLevel : uint8
 
 ---
 
-## 3. Critical Missing Finding: Camera Sensor VRAM Impact
+## 3. Additional Finding: Camera Sensor VRAM Impact
 
-The Executive Summary does not mention camera sensors as a VRAM factor. Our measurements on RTX 5090 (Shipping build, headless, nvidia-smi) reveal they are the **dominant VRAM consumer**:
+The Executive Summary focuses on engine-level configuration and map loading, which is a natural starting point. Our runtime measurements on RTX 5090 (Shipping build, headless, nvidia-smi) identified an additional major VRAM factor that may be worth incorporating into the analysis — **camera sensor render target allocation**:
 
 | Configuration | VRAM (MiB) | Delta from Baseline |
 |---|---|---|
@@ -179,11 +179,11 @@ The first camera triggers ~4.6 GB of shared rendering resource allocation (GBuff
 
 **Root cause in code:** Each `ASceneCaptureSensor` creates its own `USceneCaptureComponent2D_CARLA` with [`bUseRayTracingIfEnabled = true`][scs-71] ([SceneCaptureSensor.cpp:71][scs-71]), meaning every camera forces per-view BVH traversal when HW RT is active. Each camera also maintains an independent set of [13 GBuffer data streams][scs-h-553] ([SceneCaptureSensor.h:553-568][scs-h-553]).
 
-A typical autonomous driving scenario (Town10, 30 vehicles, 3 cameras, LiDAR) reaches ~13 GB — **this is the actual mechanism behind the 16 GB minimum requirement**, not the texture streaming pool.
+A typical autonomous driving scenario (Town10, 30 vehicles, 3 cameras, LiDAR) reaches ~13 GB. This suggests that camera sensor allocation is a major contributor to the 16 GB minimum requirement reported by users, alongside the engine-level factors identified in the Executive Summary.
 
 ---
 
-## 4. Corrected VRAM Budget Model
+## 4. Revised VRAM Budget Model
 
 | Component | PDF Estimate | Measured Value | Source |
 |---|---|---|---|
@@ -200,30 +200,28 @@ A typical autonomous driving scenario (Town10, 30 vehicles, 3 cameras, LiDAR) re
 
 ## 5. Revised Optimization Priority
 
-The PDF prioritizes `r.Streaming.PoolSize` reduction as the "highest-ROI action." Based on source code verification and measured data, the actual priority order is:
+Building on the Executive Summary's recommendations and incorporating the source code and measurement findings, we propose the following revised priority order:
 
 | Priority | Action | Expected Impact | PDF Priority |
 |---|---|---|---|
 | **1** | Disable HW RT by default + disable per-camera RT | ~1-2 GB (BVH) + reduces per-camera overhead | Tier 1 (partial) |
-| **2** | Modernize quality level CVars for UE5 | Fixes Low > Epic VRAM regression with cameras | Not addressed |
-| **3** | Camera sensor render pipeline optimization | ~2-4 GB for multi-camera setups | **Not mentioned** |
+| **2** | Modernize quality level CVars for UE5 | Fixes Low > Epic VRAM regression with cameras | (new finding) |
+| **3** | Camera sensor render pipeline optimization | ~2-4 GB for multi-camera setups | (new finding) |
 | **4** | World Partition migration for Town15 | ~3-4 GB for large maps | Tier 3 |
 | **5** | UE5 scalability groups (DefaultScalability.ini) | Proper sg.* command support | Tier 2 (partial) |
-| ~~6~~ | ~~Reduce r.Streaming.PoolSize~~ | ~~No effect~~ (already at 2000 < PDF's target of 4096) | ~~PDF's #1 recommendation~~ |
+| 6 | Reduce r.Streaming.PoolSize | No additional effect (runtime value already at 2000, below the suggested 4096) | PDF Tier 1 |
 
 ---
 
 ## 6. Conclusion
 
-The Executive Summary provides valuable architectural analysis of CARLA's VRAM challenges. Its qualitative observations about HW Ray Tracing defaults, missing World Partition, and incomplete scalability are correct and actionable.
+The Executive Summary provides a valuable and well-structured analysis of CARLA's VRAM accessibility challenge. Its architectural observations — HW Ray Tracing enabled by default, absence of World Partition, and incomplete scalability infrastructure — are confirmed by the source code and directly actionable. The tiered optimization framework (configuration changes, engineering work, architectural migration) is a practical approach that we have adopted in our own improvement plan.
 
-However, the quantitative foundation of the analysis contains critical errors:
-- Three key numeric claims are wrong (PoolSize, SetRes, SkinCache)
-- The resulting VRAM budget model (20-23 GB theoretical ceiling) is unsupported
-- The #1 recommended action (PoolSize reduction) would have zero effect
-- The largest actual VRAM consumer (camera sensor RT allocation) is entirely unaddressed
+Our source code verification found that three numeric values differ from what is reported (PoolSize, SetRes, SkinCache). These discrepancies may stem from differences in build configuration, branch state, or runtime measurement methodology. Regardless of the source of the discrepancy, the practical implication is that the PoolSize reduction — identified as the highest-ROI action — would not yield additional savings given the current runtime value of 2000 MB.
 
-We recommend that any optimization efforts follow the revised priority order above, beginning with HW RT default changes and camera sensor improvements rather than texture streaming pool adjustments.
+Our runtime profiling also surfaced camera sensor render target allocation as a substantial VRAM factor (~4.6 GB for the first camera) that complements the engine-level analysis in the Executive Summary. Incorporating this finding into the optimization roadmap would provide a more complete path toward 8-12 GB GPU compatibility.
+
+We look forward to collaborating on the optimization effort and would be happy to share our measurement methodology and test scripts for further validation.
 
 ---
 
