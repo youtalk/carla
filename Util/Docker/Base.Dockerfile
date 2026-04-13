@@ -57,7 +57,7 @@ RUN apt-get update && \
         git \
         git-lfs \
         libpng-dev \
-        libtiff5-dev \
+        libtiff-dev \
         libjpeg-dev \
         tzdata \
         sed \
