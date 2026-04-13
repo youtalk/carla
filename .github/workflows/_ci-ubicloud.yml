@@ -1,0 +1,49 @@
+name: Ubicloud CI
+
+on:
+  workflow_call:
+    inputs:
+      ubuntu-version:
+        type: string
+        required: false
+        default: "22.04"
+
+jobs:
+  build:
+    name: Build (Ubuntu ${{ inputs.ubuntu-version }})
+    runs-on: ubicloud-standard-30
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/carla-ue5-toolchain:${{ inputs.ubuntu-version }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    env:
+      CARLA_UNREAL_ENGINE_PATH: /unreal-engine
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure
+        run: |
+          cmake --preset Release \
+            -DENABLE_ROS2=ON \
+            -DBUILD_CARLA_UNREAL=OFF \
+            -DBUILD_EXAMPLES=OFF
+
+      - name: Build LibCarla Client
+        run: cmake --build Build/Release --target carla-client
+
+      - name: Build LibCarla Server
+        run: cmake --build Build/Release --target carla-server
+
+      - name: Build PythonAPI
+        run: cmake --build Build/Release --target carla-python-api
+
+      - name: Build summary
+        if: always()
+        run: |
+          echo "## Build Summary (Ubuntu ${{ inputs.ubuntu-version }})" >> $GITHUB_STEP_SUMMARY
+          echo "- Runner: ubicloud-standard-30" >> $GITHUB_STEP_SUMMARY
+          echo "- Container: carla-ue5-toolchain:${{ inputs.ubuntu-version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Targets: carla-client, carla-server, carla-python-api" >> $GITHUB_STEP_SUMMARY
