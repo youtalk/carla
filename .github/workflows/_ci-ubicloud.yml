@@ -45,7 +45,13 @@ jobs:
           cmake --preset Release \
             -DENABLE_ROS2=ON \
             -DBUILD_CARLA_UNREAL=OFF \
-            -DBUILD_EXAMPLES=OFF
+            -DBUILD_EXAMPLES=OFF \
+            --debug-trycompile \
+            || true
+          echo "=== CMakeError.log (last 100 lines) ==="
+          tail -100 Build/Release/CMakeFiles/CMakeError.log 2>/dev/null || true
+          # Fail if cmake failed
+          [ -f Build/Release/CMakeCache.txt ] && grep -q "CMAKE_PROJECT_NAME:STATIC=CARLA" Build/Release/CMakeCache.txt
 
       - name: Build LibCarla Client
         run: cmake --build Build/Release --target carla-client
