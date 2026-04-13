@@ -1,0 +1,22 @@
+name: Ubicloud-Dev
+
+on:
+  push:
+    branches:
+      - ue5-dev
+  workflow_dispatch:
+
+concurrency:
+  group: ubicloud-push-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Ubuntu ${{ matrix.ubuntu-version }}
+    strategy:
+      fail-fast: false
+      matrix:
+        ubuntu-version: ["22.04"]
+    uses: ./.github/workflows/_ci-ubicloud.yml
+    with:
+      ubuntu-version: ${{ matrix.ubuntu-version }}
