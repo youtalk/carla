@@ -29,7 +29,8 @@ jobs:
           cmake --preset Release \
             -DENABLE_ROS2=ON \
             -DBUILD_CARLA_UNREAL=OFF \
-            -DBUILD_EXAMPLES=OFF
+            -DBUILD_EXAMPLES=OFF \
+            -Dstandard_math_library_linked_to_as_m=TRUE
 
       - name: Build LibCarla Client
         run: cmake --build Build/Release --target carla-client
