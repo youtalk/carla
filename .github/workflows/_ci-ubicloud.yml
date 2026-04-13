@@ -24,34 +24,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Debug toolchain
-        if: always()
-        run: |
-          echo "=== RHEL compat symlinks ==="
-          ls -la /lib64/libm* 2>/dev/null || echo "no /lib64/libm*"
-          ls -la /usr/lib64/libm* 2>/dev/null || echo "no /usr/lib64/libm*"
-          echo "=== Ubuntu system libs ==="
-          ls -la /lib/x86_64-linux-gnu/libm* 2>/dev/null || echo "no Ubuntu libm"
-          echo "=== UE5 Clang test ==="
-          CLANG=$(ls ${CARLA_UNREAL_ENGINE_PATH}/Engine/Extras/ThirdPartyNotUE/SDKs/HostLinux/Linux_x64/v*/x86_64-unknown-linux-gnu/bin/clang 2>/dev/null | head -1)
-          echo "Clang: $CLANG"
-          echo 'int main(){return 0;}' > /tmp/test.c
-          $CLANG -v /tmp/test.c -lm -o /tmp/test 2>&1 || true
-          echo "=== Clang default search paths ==="
-          $CLANG -print-search-dirs 2>&1 | head -5
-
       - name: Configure
         run: |
           cmake --preset Release \
             -DENABLE_ROS2=ON \
             -DBUILD_CARLA_UNREAL=OFF \
-            -DBUILD_EXAMPLES=OFF \
-            --debug-trycompile \
-            || true
-          echo "=== CMakeError.log (last 100 lines) ==="
-          tail -100 Build/Release/CMakeFiles/CMakeError.log 2>/dev/null || true
-          # Fail if cmake failed
-          [ -f Build/Release/CMakeCache.txt ] && grep -q "CMAKE_PROJECT_NAME:STATIC=CARLA" Build/Release/CMakeCache.txt
+            -DBUILD_EXAMPLES=OFF
 
       - name: Build LibCarla Client
         run: cmake --build Build/Release --target carla-client
