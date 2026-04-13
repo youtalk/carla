@@ -93,7 +93,7 @@ add_compile_options (
 	$<$<COMPILE_LANGUAGE:CXX>:-stdlib=libc++>
 )
 
-add_link_options (-stdlib=libc++ -L${UE_LIBS} )
+add_link_options ($<$<LINK_LANGUAGE:CXX>:-stdlib=libc++> -L${UE_LIBS} )
 
 set (
 	CMAKE_AR
