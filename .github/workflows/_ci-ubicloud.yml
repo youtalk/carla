@@ -24,12 +24,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Resolve sysroot
+        id: sysroot
+        run: |
+          SYSROOT=$(ls -d ${CARLA_UNREAL_ENGINE_PATH}/Engine/Extras/ThirdPartyNotUE/SDKs/HostLinux/Linux_x64/v*/x86_64-unknown-linux-gnu 2>/dev/null | head -1)
+          echo "path=$SYSROOT" >> "$GITHUB_OUTPUT"
+          echo "Sysroot: $SYSROOT"
+
       - name: Configure
         run: |
           cmake --preset Release \
             -DENABLE_ROS2=ON \
             -DBUILD_CARLA_UNREAL=OFF \
-            -DBUILD_EXAMPLES=OFF
+            -DBUILD_EXAMPLES=OFF \
+            -DCMAKE_SYSROOT=${{ steps.sysroot.outputs.path }}
 
       - name: Build LibCarla Client
         run: cmake --build Build/Release --target carla-client
