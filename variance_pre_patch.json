@@ -1,0 +1,988 @@
+{
+  "timestamp": "2026-04-11T06:12:15.138223",
+  "runs": 5,
+  "duration": 30,
+  "map": "Town10HD_Opt",
+  "scenarios": {
+    "01_idle": {
+      "runs": [
+        {
+          "gpu_util_pct": {
+            "mean": 89.06,
+            "min": 84.0,
+            "max": 94.0
+          },
+          "vram_used_mb": {
+            "mean": 6985.97,
+            "min": 6984.0,
+            "max": 6986.0
+          },
+          "gpu_temp_c": {
+            "mean": 50.11,
+            "min": 48.0,
+            "max": 52.0
+          },
+          "power_draw_w": {
+            "mean": 213.66,
+            "min": 202.46,
+            "max": 216.74
+          },
+          "cpu_util_pct": {
+            "mean": 15.43,
+            "min": 9.7,
+            "max": 24.8
+          },
+          "ram_used_mb": {
+            "mean": 9835.37,
+            "min": 9706.32,
+            "max": 9967.86
+          },
+          "server_rss_mb": {
+            "mean": 6113.11,
+            "min": 6102.04,
+            "max": 6205.86
+          },
+          "server_vms_mb": {
+            "mean": 27716.86,
+            "min": 27705.31,
+            "max": 27812.88
+          },
+          "server_cpu_pct": {
+            "mean": 324.68,
+            "min": 225.3,
+            "max": 370.6
+          },
+          "server_threads": {
+            "mean": 124.0,
+            "min": 124,
+            "max": 124
+          },
+          "server_fps": {
+            "mean": 20.0,
+            "min": 20.0,
+            "max": 20.0
+          }
+        },
+        {
+          "gpu_util_pct": {
+            "mean": 89.38,
+            "min": 83.0,
+            "max": 94.0
+          },
+          "vram_used_mb": {
+            "mean": 6990.0,
+            "min": 6990.0,
+            "max": 6990.0
+          },
+          "gpu_temp_c": {
+            "mean": 52.64,
+            "min": 51.0,
+            "max": 54.0
+          },
+          "power_draw_w": {
+            "mean": 215.78,
+            "min": 134.78,
+            "max": 219.65
+          },
+          "cpu_util_pct": {
+            "mean": 15.44,
+            "min": 10.7,
+            "max": 18.6
+          },
+          "ram_used_mb": {
+            "mean": 9865.02,
+            "min": 9769.34,
+            "max": 10013.11
+          },
+          "server_rss_mb": {
+            "mean": 6131.73,
+            "min": 6120.6,
+            "max": 6199.62
+          },
+          "server_vms_mb": {
+            "mean": 27704.3,
+            "min": 27691.53,
+            "max": 27771.65
+          },
+          "server_cpu_pct": {
+            "mean": 327.66,
+            "min": 224.8,
+            "max": 361.2
+          },
+          "server_threads": {
+            "mean": 124.0,
+            "min": 124,
+            "max": 124
+          },
+          "server_fps": {
+            "mean": 20.0,
+            "min": 20.0,
+            "max": 20.0
+          }
+        },
+        {
+          "gpu_util_pct": {
+            "mean": 90.03,
+            "min": 85.0,
+            "max": 94.0
+          },
+          "vram_used_mb": {
+            "mean": 7277.0,
+            "min": 7277.0,
+            "max": 7277.0
+          },
+          "gpu_temp_c": {
+            "mean": 54.35,
+            "min": 53.0,
+            "max": 56.0
+          },
+          "power_draw_w": {
+            "mean": 216.18,
+            "min": 132.58,
+            "max": 219.59
+          },
+          "cpu_util_pct": {
+            "mean": 15.16,
+            "min": 10.3,
+            "max": 18.0
+          },
+          "ram_used_mb": {
+            "mean": 9963.7,
+            "min": 9849.07,
+            "max": 10092.41
+          },
+          "server_rss_mb": {
+            "mean": 6151.05,
+            "min": 6147.87,
+            "max": 6155.39
+          },
+          "server_vms_mb": {
+            "mean": 27707.07,
+            "min": 27701.45,
+            "max": 27714.07
+          },
+          "server_cpu_pct": {
+            "mean": 325.46,
+            "min": 230.0,
+            "max": 351.0
+          },
+          "server_threads": {
+            "mean": 124.0,
+            "min": 124,
+            "max": 124
+          },
+          "server_fps": {
+            "mean": 20.0,
+            "min": 20.0,
+            "max": 20.0
+          }
+        },
+        {
+          "gpu_util_pct": {
+            "mean": 90.04,
+            "min": 86.0,
+            "max": 94.0
+          },
+          "vram_used_mb": {
+            "mean": 7271.0,
+            "min": 7271.0,
+            "max": 7271.0
+          },
+          "gpu_temp_c": {
+            "mean": 48.5,
+            "min": 46.0,
+            "max": 51.0
+          },
+          "power_draw_w": {
+            "mean": 211.16,
+            "min": 132.14,
+            "max": 215.08
+          },
+          "cpu_util_pct": {
+            "mean": 15.49,
+            "min": 10.3,
+            "max": 18.3
+          },
+          "ram_used_mb": {
+            "mean": 9963.98,
+            "min": 9814.57,
+            "max": 10057.79
+          },
+          "server_rss_mb": {
+            "mean": 6210.74,
+            "min": 6205.55,
+            "max": 6237.55
+          },
+          "server_vms_mb": {
+            "mean": 28268.87,
+            "min": 28260.81,
+            "max": 28292.81
+          },
+          "server_cpu_pct": {
+            "mean": 328.81,
+            "min": 226.1,
+            "max": 368.5
+          },
+          "server_threads": {
+            "mean": 131.0,
+            "min": 131,
+            "max": 131
+          },
+          "server_fps": {
+            "mean": 20.0,
+            "min": 20.0,
+            "max": 20.0
+          }
+        }
+      ],
+      "variance": {
+        "vram_used_mb": {
+          "min": 6985.97,
+          "max": 7277.0,
+          "mean": 7130.99,
+          "stddev": 143.03,
+          "range": 291.03,
+          "values": [
+            6985.97,
+            6990.0,
+            7277.0,
+            7271.0
+          ]
+        },
+        "server_rss_mb": {
+          "min": 6113.11,
+          "max": 6210.74,
+          "mean": 6151.66,
+          "stddev": 36.65,
+          "range": 97.63,
+          "values": [
+            6113.11,
+            6131.73,
+            6151.05,
+            6210.74
+          ]
+        },
+        "server_vms_mb": {
+          "min": 27704.3,
+          "max": 28268.87,
+          "mean": 27849.28,
+          "stddev": 242.3,
+          "range": 564.57,
+          "values": [
+            27716.86,
+            27704.3,
+            27707.07,
+            28268.87
+          ]
+        },
+        "server_threads": {
+          "min": 124.0,
+          "max": 131.0,
+          "mean": 125.75,
+          "stddev": 3.03,
+          "range": 7.0,
+          "values": [
+            124.0,
+            124.0,
+            124.0,
+            131.0
+          ]
+        }
+      }
+    },
+    "04_sensors_single_vehicle": {
+      "runs": [
+        {
+          "gpu_util_pct": {
+            "mean": 88.87,
+            "min": 70.0,
+            "max": 96.0
+          },
+          "vram_used_mb": {
+            "mean": 11911.91,
+            "min": 9263.0,
+            "max": 15430.0
+          },
+          "gpu_temp_c": {
+            "mean": 54.46,
+            "min": 52.0,
+            "max": 56.0
+          },
+          "power_draw_w": {
+            "mean": 265.65,
+            "min": 220.4,
+            "max": 292.43
+          },
+          "cpu_util_pct": {
+            "mean": 22.2,
+            "min": 16.9,
+            "max": 27.1
+          },
+          "ram_used_mb": {
+            "mean": 10146.85,
+            "min": 10044.65,
+            "max": 10262.71
+          },
+          "server_rss_mb": {
+            "mean": 6857.94,
+            "min": 6470.07,
+            "max": 7310.55
+          },
+          "server_vms_mb": {
+            "mean": 29200.41,
+            "min": 28817.4,
+            "max": 29667.73
+          },
+          "server_cpu_pct": {
+            "mean": 509.95,
+            "min": 389.4,
+            "max": 597.6
+          },
+          "server_threads": {
+            "mean": 135.0,
+            "min": 135,
+            "max": 135
+          },
+          "server_fps": {
+            "mean": 20.0,
+            "min": 20.0,
+            "max": 20.0
+          }
+        },
+        {
+          "gpu_util_pct": {
+            "mean": 88.2,
+            "min": 63.0,
+            "max": 96.0
+          },
+          "vram_used_mb": {
+            "mean": 11969.84,
+            "min": 9315.0,
+            "max": 15477.0
+          },
+          "gpu_temp_c": {
+            "mean": 57.67,
+            "min": 56.0,
+            "max": 59.0
+          },
+          "power_draw_w": {
+            "mean": 269.27,
+            "min": 223.54,
+            "max": 297.64
+          },
+          "cpu_util_pct": {
+            "mean": 22.18,
+            "min": 16.9,
+            "max": 26.3
+          },
+          "ram_used_mb": {
+            "mean": 10317.91,
+            "min": 10221.68,
+            "max": 10413.64
+          },
+          "server_rss_mb": {
+            "mean": 7008.36,
+            "min": 6619.21,
+            "max": 7388.75
+          },
+          "server_vms_mb": {
+            "mean": 29191.2,
+            "min": 28805.1,
+            "max": 29597.76
+          },
+          "server_cpu_pct": {
+            "mean": 510.28,
+            "min": 388.1,
+            "max": 595.2
+          },
+          "server_threads": {
+            "mean": 135.0,
+            "min": 135,
+            "max": 135
+          },
+          "server_fps": {
+            "mean": 20.0,
+            "min": 20.0,
+            "max": 20.0
+          }
+        },
+        {
+          "gpu_util_pct": {
+            "mean": 86.82,
+            "min": 47.0,
+            "max": 96.0
+          },
+          "vram_used_mb": {
+            "mean": 11958.82,
+            "min": 9336.0,
+            "max": 15467.0
+          },
+          "gpu_temp_c": {
+            "mean": 60.13,
+            "min": 58.0,
+            "max": 61.0
+          },
+          "power_draw_w": {
+            "mean": 271.71,
+            "min": 224.43,
+            "max": 299.46
+          },
+          "cpu_util_pct": {
+            "mean": 22.21,
+            "min": 17.1,
+            "max": 27.0
+          },
+          "ram_used_mb": {
+            "mean": 10300.49,
+            "min": 10230.41,
+            "max": 10349.41
+          },
+          "server_rss_mb": {
+            "mean": 7036.31,
+            "min": 6686.32,
+            "max": 7468.83
+          },
+          "server_vms_mb": {
+            "mean": 29218.25,
+            "min": 28900.17,
+            "max": 29676.39
+          },
+          "server_cpu_pct": {
+            "mean": 509.15,
+            "min": 392.4,
+            "max": 585.8
+          },
+          "server_threads": {
+            "mean": 135.0,
+            "min": 135,
+            "max": 135
+          },
+          "server_fps": {
+            "mean": 20.0,
+            "min": 20.0,
+            "max": 20.0
+          }
+        },
+        {
+          "gpu_util_pct": {
+            "mean": 92.98,
+            "min": 69.0,
+            "max": 96.0
+          },
+          "vram_used_mb": {
+            "mean": 11822.72,
+            "min": 9335.0,
+            "max": 15486.0
+          },
+          "gpu_temp_c": {
+            "mean": 62.41,
+            "min": 61.0,
+            "max": 64.0
+          },
+          "power_draw_w": {
+            "mean": 284.66,
+            "min": 247.41,
+            "max": 304.24
+          },
+          "cpu_util_pct": {
+            "mean": 23.44,
+            "min": 18.0,
+            "max": 26.4
+          },
+          "ram_used_mb": {
+            "mean": 10339.63,
+            "min": 10255.03,
+            "max": 10429.43
+          },
+          "server_rss_mb": {
+            "mean": 7026.57,
+            "min": 6666.16,
+            "max": 7385.81
+          },
+          "server_vms_mb": {
+            "mean": 29197.21,
+            "min": 28818.04,
+            "max": 29589.59
+          },
+          "server_cpu_pct": {
+            "mean": 538.05,
+            "min": 407.0,
+            "max": 595.7
+          },
+          "server_threads": {
+            "mean": 135.0,
+            "min": 135,
+            "max": 135
+          },
+          "server_fps": {
+            "mean": 20.0,
+            "min": 20.0,
+            "max": 20.0
+          }
+        },
+        {
+          "gpu_util_pct": {
+            "mean": 88.27,
+            "min": 19.0,
+            "max": 96.0
+          },
+          "vram_used_mb": {
+            "mean": 11989.96,
+            "min": 9315.0,
+            "max": 15459.0
+          },
+          "gpu_temp_c": {
+            "mean": 63.72,
+            "min": 61.0,
+            "max": 65.0
+          },
+          "power_draw_w": {
+            "mean": 276.69,
+            "min": 228.81,
+            "max": 304.54
+          },
+          "cpu_util_pct": {
+            "mean": 22.11,
+            "min": 15.1,
+            "max": 26.0
+          },
+          "ram_used_mb": {
+            "mean": 10334.91,
+            "min": 10231.4,
+            "max": 10482.88
+          },
+          "server_rss_mb": {
+            "mean": 7049.74,
+            "min": 6672.48,
+            "max": 7500.25
+          },
+          "server_vms_mb": {
+            "mean": 29221.43,
+            "min": 28847.46,
+            "max": 29679.47
+          },
+          "server_cpu_pct": {
+            "mean": 507.78,
+            "min": 347.5,
+            "max": 587.2
+          },
+          "server_threads": {
+            "mean": 135.0,
+            "min": 135,
+            "max": 135
+          },
+          "server_fps": {
+            "mean": 20.0,
+            "min": 20.0,
+            "max": 20.0
+          }
+        }
+      ],
+      "variance": {
+        "vram_used_mb": {
+          "min": 11822.72,
+          "max": 11989.96,
+          "mean": 11930.65,
+          "stddev": 59.74,
+          "range": 167.24,
+          "values": [
+            11911.91,
+            11969.84,
+            11958.82,
+            11822.72,
+            11989.96
+          ]
+        },
+        "server_rss_mb": {
+          "min": 6857.94,
+          "max": 7049.74,
+          "mean": 6995.78,
+          "stddev": 70.23,
+          "range": 191.8,
+          "values": [
+            6857.94,
+            7008.36,
+            7036.31,
+            7026.57,
+            7049.74
+          ]
+        },
+        "server_vms_mb": {
+          "min": 29191.2,
+          "max": 29221.43,
+          "mean": 29205.7,
+          "stddev": 11.96,
+          "range": 30.23,
+          "values": [
+            29200.41,
+            29191.2,
+            29218.25,
+            29197.21,
+            29221.43
+          ]
+        },
+        "server_threads": {
+          "min": 135.0,
+          "max": 135.0,
+          "mean": 135.0,
+          "stddev": 0.0,
+          "range": 0.0,
+          "values": [
+            135.0,
+            135.0,
+            135.0,
+            135.0,
+            135.0
+          ]
+        }
+      }
+    },
+    "06_rendering_stress_night_rain": {
+      "runs": [
+        {
+          "gpu_util_pct": {
+            "mean": 82.12,
+            "min": 61.0,
+            "max": 96.0
+          },
+          "vram_used_mb": {
+            "mean": 15365.15,
+            "min": 11559.0,
+            "max": 18741.0
+          },
+          "gpu_temp_c": {
+            "mean": 64.31,
+            "min": 62.0,
+            "max": 66.0
+          },
+          "power_draw_w": {
+            "mean": 277.77,
+            "min": 229.84,
+            "max": 314.58
+          },
+          "cpu_util_pct": {
+            "mean": 21.87,
+            "min": 16.8,
+            "max": 27.0
+          },
+          "ram_used_mb": {
+            "mean": 10349.44,
+            "min": 10221.91,
+            "max": 10449.56
+          },
+          "server_rss_mb": {
+            "mean": 7247.92,
+            "min": 6837.12,
+            "max": 7866.86
+          },
+          "server_vms_mb": {
+            "mean": 29431.4,
+            "min": 28995.76,
+            "max": 30073.77
+          },
+          "server_cpu_pct": {
+            "mean": 500.25,
+            "min": 389.9,
+            "max": 603.8
+          },
+          "server_threads": {
+            "mean": 135.0,
+            "min": 135,
+            "max": 135
+          },
+          "server_fps": {
+            "mean": 20.0,
+            "min": 20.0,
+            "max": 20.0
+          }
+        },
+        {
+          "gpu_util_pct": {
+            "mean": 55.8,
+            "min": 25.0,
+            "max": 65.0
+          },
+          "vram_used_mb": {
+            "mean": 14525.95,
+            "min": 11996.0,
+            "max": 18386.0
+          },
+          "gpu_temp_c": {
+            "mean": 61.82,
+            "min": 60.0,
+            "max": 63.0
+          },
+          "power_draw_w": {
+            "mean": 220.06,
+            "min": 179.15,
+            "max": 233.74
+          },
+          "cpu_util_pct": {
+            "mean": 14.79,
+            "min": 12.0,
+            "max": 15.9
+          },
+          "ram_used_mb": {
+            "mean": 10488.34,
+            "min": 10394.36,
+            "max": 10651.83
+          },
+          "server_rss_mb": {
+            "mean": 7181.98,
+            "min": 6668.4,
+            "max": 7602.86
+          },
+          "server_vms_mb": {
+            "mean": 29276.54,
+            "min": 28757.5,
+            "max": 29718.29
+          },
+          "server_cpu_pct": {
+            "mean": 337.96,
+            "min": 269.3,
+            "max": 362.1
+          },
+          "server_threads": {
+            "mean": 135.0,
+            "min": 135,
+            "max": 135
+          },
+          "server_fps": {
+            "mean": 20.0,
+            "min": 20.0,
+            "max": 20.0
+          }
+        },
+        {
+          "gpu_util_pct": {
+            "mean": 83.17,
+            "min": 28.0,
+            "max": 96.0
+          },
+          "vram_used_mb": {
+            "mean": 15190.86,
+            "min": 11702.0,
+            "max": 18723.0
+          },
+          "gpu_temp_c": {
+            "mean": 63.61,
+            "min": 61.0,
+            "max": 65.0
+          },
+          "power_draw_w": {
+            "mean": 276.17,
+            "min": 226.14,
+            "max": 313.16
+          },
+          "cpu_util_pct": {
+            "mean": 21.95,
+            "min": 16.9,
+            "max": 26.6
+          },
+          "ram_used_mb": {
+            "mean": 10559.42,
+            "min": 10515.5,
+            "max": 10631.83
+          },
+          "server_rss_mb": {
+            "mean": 7370.31,
+            "min": 6969.79,
+            "max": 7844.77
+          },
+          "server_vms_mb": {
+            "mean": 29475.38,
+            "min": 29057.2,
+            "max": 29953.74
+          },
+          "server_cpu_pct": {
+            "mean": 500.84,
+            "min": 385.8,
+            "max": 599.4
+          },
+          "server_threads": {
+            "mean": 135.0,
+            "min": 135,
+            "max": 135
+          },
+          "server_fps": {
+            "mean": 20.0,
+            "min": 20.0,
+            "max": 20.0
+          }
+        },
+        {
+          "gpu_util_pct": {
+            "mean": 83.85,
+            "min": 61.0,
+            "max": 97.0
+          },
+          "vram_used_mb": {
+            "mean": 15365.73,
+            "min": 11846.0,
+            "max": 18902.0
+          },
+          "gpu_temp_c": {
+            "mean": 64.59,
+            "min": 62.0,
+            "max": 66.0
+          },
+          "power_draw_w": {
+            "mean": 277.96,
+            "min": 228.7,
+            "max": 315.52
+          },
+          "cpu_util_pct": {
+            "mean": 22.02,
+            "min": 17.0,
+            "max": 27.6
+          },
+          "ram_used_mb": {
+            "mean": 10550.34,
+            "min": 10488.39,
+            "max": 10622.39
+          },
+          "server_rss_mb": {
+            "mean": 7363.33,
+            "min": 7011.78,
+            "max": 7828.77
+          },
+          "server_vms_mb": {
+            "mean": 29470.19,
+            "min": 29093.11,
+            "max": 29955.71
+          },
+          "server_cpu_pct": {
+            "mean": 503.69,
+            "min": 394.4,
+            "max": 609.4
+          },
+          "server_threads": {
+            "mean": 135.0,
+            "min": 135,
+            "max": 135
+          },
+          "server_fps": {
+            "mean": 20.0,
+            "min": 20.0,
+            "max": 20.0
+          }
+        },
+        {
+          "gpu_util_pct": {
+            "mean": 83.5,
+            "min": 53.0,
+            "max": 97.0
+          },
+          "vram_used_mb": {
+            "mean": 15569.14,
+            "min": 11814.0,
+            "max": 19021.0
+          },
+          "gpu_temp_c": {
+            "mean": 64.41,
+            "min": 62.0,
+            "max": 66.0
+          },
+          "power_draw_w": {
+            "mean": 277.8,
+            "min": 229.05,
+            "max": 314.2
+          },
+          "cpu_util_pct": {
+            "mean": 22.05,
+            "min": 16.9,
+            "max": 26.7
+          },
+          "ram_used_mb": {
+            "mean": 10612.98,
+            "min": 10512.02,
+            "max": 10771.87
+          },
+          "server_rss_mb": {
+            "mean": 7336.88,
+            "min": 6915.93,
+            "max": 7911.47
+          },
+          "server_vms_mb": {
+            "mean": 29443.87,
+            "min": 29012.16,
+            "max": 30035.8
+          },
+          "server_cpu_pct": {
+            "mean": 505.01,
+            "min": 391.8,
+            "max": 610.3
+          },
+          "server_threads": {
+            "mean": 135.0,
+            "min": 135,
+            "max": 135
+          },
+          "server_fps": {
+            "mean": 20.0,
+            "min": 20.0,
+            "max": 20.0
+          }
+        }
+      ],
+      "variance": {
+        "vram_used_mb": {
+          "min": 14525.95,
+          "max": 15569.14,
+          "mean": 15203.37,
+          "stddev": 359.27,
+          "range": 1043.19,
+          "values": [
+            15365.15,
+            14525.95,
+            15190.86,
+            15365.73,
+            15569.14
+          ]
+        },
+        "server_rss_mb": {
+          "min": 7181.98,
+          "max": 7370.31,
+          "mean": 7300.08,
+          "stddev": 73.42,
+          "range": 188.33,
+          "values": [
+            7247.92,
+            7181.98,
+            7370.31,
+            7363.33,
+            7336.88
+          ]
+        },
+        "server_vms_mb": {
+          "min": 29276.54,
+          "max": 29475.38,
+          "mean": 29419.48,
+          "stddev": 73.3,
+          "range": 198.84,
+          "values": [
+            29431.4,
+            29276.54,
+            29475.38,
+            29470.19,
+            29443.87
+          ]
+        },
+        "server_threads": {
+          "min": 135.0,
+          "max": 135.0,
+          "mean": 135.0,
+          "stddev": 0.0,
+          "range": 0.0,
+          "values": [
+            135.0,
+            135.0,
+            135.0,
+            135.0,
+            135.0
+          ]
+        }
+      }
+    }
+  }
+}
