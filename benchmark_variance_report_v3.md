@@ -1,30 +1,30 @@
-# UE 5.5.4 パッチ性能分散テスト v3 レポート
+# UE 5.5.4 Patch Performance Variance Test v3 Report
 
-## テスト概要
+## Test Overview
 
-| 項目 | 値 |
-|------|-----|
-| マップ | Town10HD_Opt |
-| 反復回数 | 20 回/シナリオ |
-| 計測時間 | 30 秒/ラン |
-| Pre-patch 実行日時 | 2026-04-14T08:57:53 |
-| Post-patch 実行日時 | 2026-04-14T11:20:24 |
-| シナリオ数 | 4 |
-| 手法 | 各ランを独立サブプロセスで実行 |
+| Item | Value |
+|------|-------|
+| Map | Town10HD_Opt |
+| Repetitions | 20 runs/scenario |
+| Duration | 30 seconds/run |
+| Pre-patch run | 2026-04-14T08:57:53 |
+| Post-patch run | 2026-04-14T11:20:24 |
+| Scenarios | 4 |
+| Method | Each run executed as independent subprocess |
 
-## シナリオ一覧
+## Scenarios
 
-| シナリオ | 内容 |
-|---------|------|
-| `idle` | Idle (最軽量) |
-| `traffic_50v_30w` | Traffic 50v+30w (交通シミュ) |
-| `sensors_ego` | Sensors Ego (知覚開発) |
-| `combined_30v_20w_sensors` | Combined 30v+20w+sensors (AD パイプライン) |
+| Scenario | Description |
+|----------|-------------|
+| `idle` | Idle (lightest baseline) |
+| `traffic_50v_30w` | Traffic 50v+30w (traffic simulation) |
+| `sensors_ego` | Sensors Ego (perception development) |
+| `combined_30v_20w_sensors` | Combined 30v+20w+sensors (AD pipeline) |
 
-## サーバー安定性
+## Server Stability
 
-| シナリオ | | 成功 | タイムアウト | エラー | 再起動 |
-|---------|--|-----:|----------:|------:|------:|
+| Scenario | | Success | Timeouts | Errors | Restarts |
+|---------|--|--------:|---------:|-------:|---------:|
 | `idle` | Pre | 15 | 0 | 0 | 0 |
 | `idle` | Post | 16 | 4 | 0 | 1 |
 | `traffic_50v_30w` | Pre | 20 | 0 | 0 | 0 |
@@ -34,52 +34,52 @@
 | `combined_30v_20w_sensors` | Pre | 18 | 0 | 0 | 0 |
 | `combined_30v_20w_sensors` | Post | 19 | 0 | 1 | 1 |
 
-## フォーカスメトリクス詳細分析
+## Focus Metrics Detailed Analysis
 
-判定基準:
+Verdict criteria:
 - **REAL**: Welch's t-test p < 0.01
 - **BORDERLINE**: p < 0.05
 - **NOISE**: p >= 0.05
 
-### Idle (最軽量)
+### Idle (Lightest Baseline)
 
-| メトリクス | Pre Mean | Pre SD | Post Mean | Post SD | Delta | p値 | Cohen's d | 効果量 | 判定 |
-|-----------|-------:|------:|--------:|------:|------:|----:|--------:|------:|------|
+| Metric | Pre Mean | Pre SD | Post Mean | Post SD | Delta | p-value | Cohen's d | Effect Size | Verdict |
+|--------|-------:|------:|--------:|------:|------:|----:|--------:|------:|------|
 | VRAM (MB) | 7158.0 | 150.8 | 7117.6 | 132.8 | -40.5 | 0.4356 | -0.29 | small | **NOISE** |
 | Server RSS (MB) | 6154.7 | 78.3 | 6206.5 | 55.5 | +51.8 | 0.0448 | 0.77 | medium | **BORDERLINE** |
 | Server VMS (MB) | 27911.4 | 554.7 | 28415.9 | 241.5 | +504.5 | 0.0043 | 1.19 | large | **REAL** |
 | Server Threads | 126.7 | 7.0 | 133.0 | 2.9 | +6.3 | 0.0042 | 1.20 | large | **REAL** |
 
-### Traffic 50v+30w (交通シミュ)
+### Traffic 50v+30w (Traffic Simulation)
 
-| メトリクス | Pre Mean | Pre SD | Post Mean | Post SD | Delta | p値 | Cohen's d | 効果量 | 判定 |
-|-----------|-------:|------:|--------:|------:|------:|----:|--------:|------:|------|
+| Metric | Pre Mean | Pre SD | Post Mean | Post SD | Delta | p-value | Cohen's d | Effect Size | Verdict |
+|--------|-------:|------:|--------:|------:|------:|----:|--------:|------:|------|
 | VRAM (MB) | 8992.4 | 138.2 | 9127.9 | 84.2 | +135.5 | 0.0007 | 1.18 | large | **REAL** |
 | Server RSS (MB) | 6267.4 | 37.9 | 6418.9 | 45.7 | +151.6 | 0.0000 | 3.61 | large | **REAL** |
 | Server VMS (MB) | 28370.8 | 210.4 | 28642.1 | 74.6 | +271.3 | 0.0000 | 1.72 | large | **REAL** |
 | Server Threads | 132.3 | 2.8 | 135.6 | 0.8 | +3.3 | 0.0000 | 1.63 | large | **REAL** |
 
-### Sensors Ego (知覚開発)
+### Sensors Ego (Perception Development)
 
-| メトリクス | Pre Mean | Pre SD | Post Mean | Post SD | Delta | p値 | Cohen's d | 効果量 | 判定 |
-|-----------|-------:|------:|--------:|------:|------:|----:|--------:|------:|------|
+| Metric | Pre Mean | Pre SD | Post Mean | Post SD | Delta | p-value | Cohen's d | Effect Size | Verdict |
+|--------|-------:|------:|--------:|------:|------:|----:|--------:|------:|------|
 | VRAM (MB) | 12253.9 | 113.3 | 12315.5 | 113.3 | +61.6 | 0.0982 | 0.54 | medium | **NOISE** |
 | Server RSS (MB) | 6960.1 | 32.6 | 7277.4 | 26.1 | +317.3 | 0.0000 | 10.71 | large | **REAL** |
 | Server VMS (MB) | 29207.7 | 41.0 | 29355.6 | 38.7 | +147.9 | 0.0000 | 3.70 | large | **REAL** |
 | Server Threads | 134.9 | 0.3 | 136.0 | 0.0 | +1.1 | 0.0000 | 4.99 | large | **REAL** |
 
-### Combined 30v+20w+sensors (AD パイプライン)
+### Combined 30v+20w+sensors (AD Pipeline)
 
-| メトリクス | Pre Mean | Pre SD | Post Mean | Post SD | Delta | p値 | Cohen's d | 効果量 | 判定 |
-|-----------|-------:|------:|--------:|------:|------:|----:|--------:|------:|------|
+| Metric | Pre Mean | Pre SD | Post Mean | Post SD | Delta | p-value | Cohen's d | Effect Size | Verdict |
+|--------|-------:|------:|--------:|------:|------:|----:|--------:|------:|------|
 | VRAM (MB) | 15342.0 | 177.3 | 15310.7 | 350.9 | -31.4 | 0.7321 | -0.11 | negligible | **NOISE** |
 | Server RSS (MB) | 7319.3 | 233.5 | 7443.0 | 124.2 | +123.7 | 0.0566 | 0.67 | medium | **NOISE** |
 | Server VMS (MB) | 29411.3 | 111.7 | 29271.1 | 191.6 | -140.2 | 0.0104 | -0.89 | large | **BORDERLINE** |
 | Server Threads | 134.4 | 0.6 | 133.5 | 1.7 | -0.9 | 0.0388 | -0.71 | medium | **BORDERLINE** |
 
-## 総合判定サマリ
+## Summary
 
-| シナリオ | メトリクス | Pre | Post | Delta | p値 | 効果量 | 判定 |
+| Scenario | Metric | Pre | Post | Delta | p-value | Effect Size | Verdict |
 |---------|-----------|----:|-----:|------:|----:|------:|------|
 | idle | VRAM (MB) | 7158 | 7118 | -40 | 0.436 | small | **NOISE** |
 | idle | Server RSS (MB) | 6155 | 6207 | +52 | 0.045 | medium | **BORDERLINE** |
@@ -98,9 +98,9 @@
 | combined | Server VMS (MB) | 29411 | 29271 | -140 | 0.010 | large | **BORDERLINE** |
 | combined | Server Threads | 134 | 134 | -1 | 0.039 | medium | **BORDERLINE** |
 
-## 補助メトリクス概要
+## Secondary Metrics Overview
 
-| シナリオ | メトリクス | Pre Mean | Post Mean | Delta | 判定 |
+| Scenario | Metric | Pre Mean | Post Mean | Delta | Verdict |
 |---------|-----------|-------:|--------:|------:|------|
 | idle | GPU Util (%) | 88.8 | 88.3 | -0.5 | **BORDERLINE** |
 | idle | CPU Util (%) | 15.5 | 15.3 | -0.2 | **NOISE** |
@@ -127,11 +127,11 @@
 | combined | GPU Power (W) | 271.5 | 268.0 | -3.5 | **NOISE** |
 | combined | Server FPS | 20.0 | 20.0 | +0.0 | **NOISE** |
 
-## 定量分析
+## Quantitative Analysis
 
-- フォーカスメトリクス 16 件中: REAL=9, BORDERLINE=3, NOISE=4
+- Focus metrics: 16 total — REAL=9, BORDERLINE=3, NOISE=4
 
-### 統計的に有意な差 (REAL)
+### Statistically Significant Differences (REAL)
 
 - **idle / Server VMS (MB)**: +504.5 (p=0.0043, d=1.19, large)
 - **idle / Server Threads**: +6.3 (p=0.0042, d=1.20, large)
@@ -143,173 +143,176 @@
 - **sensors_ego / Server VMS (MB)**: +147.9 (p=0.0000, d=3.70, large)
 - **sensors_ego / Server Threads**: +1.1 (p=0.0000, d=4.99, large)
 
-### ボーダーライン (BORDERLINE)
+### Borderline (BORDERLINE)
 
 - **idle / Server RSS (MB)**: +51.8 (p=0.0448, d=0.77, medium)
 - **combined_30v_20w_sensors / Server VMS (MB)**: -140.2 (p=0.0104, d=-0.89, large)
 - **combined_30v_20w_sensors / Server Threads**: -0.9 (p=0.0388, d=-0.71, medium)
 
-## UE 5.5.4 パッチの内容分析
+## UE 5.5.4 Patch Content Analysis
 
-### 概要
+### Overview
 
-UE 5.5.4 パッチは **1,079 コミット**（マージ除く）、**960 ファイル変更**（+28,829 / -11,644 行）の
-メンテナンスリリース。新機能追加はなく、バグ修正と安定性改善に特化。
+The UE 5.5.4 patch comprises **1,079 commits** (excluding merges), **960 files changed**
+(+28,829 / -11,644 lines). It is a maintenance release with no new features,
+focused entirely on bug fixes and stability improvements.
 
-### CARLA に関連する主要カテゴリ
+### Key Categories Relevant to CARLA
 
-#### 1. ナビゲーションシステム修正（9コミット） — **CARLA 直接影響: 高**
+#### 1. Navigation System Fixes (9 commits) — **CARLA Impact: High**
 
-CARLA の Traffic Manager と歩行者 AI は UE のナビゲーションシステム（Recast/Detour）に依存。
+CARLA's Traffic Manager and pedestrian AI depend on UE's navigation system (Recast/Detour).
 
-- **`FRecastTileGenerator::AddReferencedObjects` クラッシュ修正** — ナビメッシュ生成中の
-  無効なオブジェクト参照チェックを修正。大量の歩行者スポーン時に発生する可能性あり
-- **ナビゲーション要素の登録解除時の参照カウント修正** — 最後の参照が削除された際に
-  再登録が必要な場合のメモリ安全性を確保
-- **`FPImplRecastNavMesh` の再作成修正** — NavigationSystemConfig 変更後にナビメッシュが
-  消失する問題。マップ切替時に影響
-- **コンポーネント登録順序の最適化** — アクター登録時に全コンポーネントが揃ってから
-  ナビゲーション登録を行うよう変更。不要な再計算を削減
+- **`FRecastTileGenerator::AddReferencedObjects` crash fix** — Corrected invalid object
+  reference check during nav mesh generation. Can be triggered when spawning many walkers
+- **Navigation element reference counting fix on unregistration** — Ensures memory safety
+  when the last reference is removed and re-registration is needed
+- **`FPImplRecastNavMesh` recreation fix** — Nav mesh disappearing after
+  NavigationSystemConfig changes. Affects map switching
+- **Component registration order optimization** — Navigation registration now waits for all
+  components to be registered, reducing unnecessary recalculations
 
-#### 2. レンダリング・グラフィックス修正（107コミット） — **CARLA 直接影響: 高**
+#### 2. Rendering / Graphics Fixes (107 commits) — **CARLA Impact: High**
 
-- **PSO プリキャッシュ修正（大規模）** — 動的レイトレーシングジオメトリ、Nanite マテリアル互換性、
-  グローバルグラフィックス PSO、ボリュメトリックフォグ、スレート PSO のプリキャッシュ対応。
-  **v2 ベンチマークで確認した描画ストレスシナリオの GPU 使用率 -28.7% の主因**
-- **Vulkan RADV ドライバ互換性修正** — Linux の AMD GPU ユーザーに影響。
-  `GRHISupportsRayTracingShaders` チェック追加
-- **レイトレーシングバッファアライメント修正** — 動的インデックス/頂点バッファを
-  16バイト境界にアライメント。レイトレーシング使用時のクラッシュ防止
-- **CSM シャドウ初期化修正** — 方向光源の `FLightRenderParameters` の未初期化メンバを修正。
-  半透明ボリュームでのシャドウ消失バグを解消
-- **Virtual Shadow Maps** — 半透明ボリュームのシャドウイング改善
-- **Niagara リボンインデックスバッファ** — レイトレーシング時のバッファオフセット計算修正
+- **PSO precaching fixes (major)** — Dynamic ray tracing geometry, Nanite material
+  compatibility, global graphics PSO, volumetric fog, and Slate PSO precaching support
+- **Vulkan RADV driver compatibility fix** — Affects Linux AMD GPU users.
+  Added `GRHISupportsRayTracingShaders` check
+- **Ray tracing buffer alignment fix** — Dynamic index/vertex buffers aligned to
+  16-byte boundaries. Prevents crashes when using ray tracing
+- **CSM shadow initialization fix** — Uninitialized `FLightRenderParameters` members
+  corrected. Fixes shadow disappearance in translucent volumes
+- **Virtual Shadow Maps** — Improved shadowing for translucent volumes
+- **Niagara ribbon index buffer** — Buffer offset calculation fix for ray tracing
 
-#### 3. クラッシュ修正（110コミット） — **CARLA 直接影響: 中〜高**
+#### 3. Crash Fixes (110 commits) — **CARLA Impact: Medium-High**
 
-- **Sequencer + World Partition クラッシュ** — レベルシーケンスの PostLoad 時に
-  Blueprint コンパイルが走るとクラッシュ。CARLA のシーケンサー使用時に影響
-- **GPU SRV 整数アンダーフロークラッシュ** — シェーダーリソースビューのクラッシュ修正
-- **StateTree ランタイムクラッシュ** — クック済みプラットフォームでプロパティが
-  生成されない問題。パッケージビルドの安定性に直結
-- **Blueprint ホットリロード後のクラッシュ** — エディタ使用時の安定性向上
-- **VT フィードバック更新クラッシュ** — 同一 RDG ビルダーで連続更新が発生した際の修正
+- **Sequencer + World Partition crash** — Crash when Blueprint compilation runs during
+  level sequence PostLoad
+- **GPU SRV integer underflow crash** — Shader resource view crash fix
+- **StateTree runtime crash** — Property not generated for cooked platforms.
+  Directly affects packaged build stability
+- **Blueprint hot-reload crash** — Editor stability improvement
+- **VT feedback update crash** — Fix for back-to-back updates in the same RDG builder
 
-#### 4. Linux プラットフォーム修正（26コミット） — **CARLA 直接影響: 高**
+#### 4. Linux Platform Fixes (26 commits) — **CARLA Impact: High**
 
-- **Vulkan フィーチャーレベルチェック** — Linux でサポートされていないフィーチャーレベルが
-  選択された際の適切なフォールバック
-- **Electra メディア再生** — `file://` スキームの Linux 対応修正
-- **CAD ファイルインポート** — Datasmith の Linux ビルド復旧
-- **Cocoa スレッドデッドロック修正** — macOS 向けだが、スレッド安全性の改善は
-  Linux にも間接的に影響
+- **Vulkan feature level check** — Proper fallback when unsupported feature levels
+  are selected on Linux
+- **Electra media playback** — `file://` scheme handling fix for Linux
+- **CAD file import** — Datasmith Linux build restoration
+- **Cocoa thread deadlock fix** — macOS-targeted but thread safety improvements
+  indirectly benefit Linux
 
-#### 5. Pixel Streaming 修正（9コミット） — **CARLA 直接影響: 中**
+#### 5. Pixel Streaming Fixes (9 commits) — **CARLA Impact: Medium**
 
-- クラッシュ修正、ストリーミング破損修正、品質改善
-- CARLA を Pixel Streaming で配信するユーザーに影響
+- Crash fixes, streaming corruption fixes, quality improvements
+- Affects users streaming CARLA via Pixel Streaming
 
-#### 6. その他 CARLA に関連する修正
+#### 6. Other CARLA-Relevant Fixes
 
-- **Remote Control プラグインのサーバービルド対応** — ヘッドレスサーバーでの
-  Remote Control 使用を可能にする修正。CARLA のサーバーモードに関連
-- **PCG（Procedural Content Generation）修正 50+件** — GPU/CPU 回転不一致、
-  アトリビュート処理、メタデータ操作の修正。マップ生成パイプラインに影響
-- **Interchange（FBX インポート）修正** — スケルタルメッシュの配置、
-  アニメーションカーブ、バインドポーズ処理。アセットインポートの安定性向上
+- **Remote Control plugin server build support** — Enables Remote Control in headless
+  server mode. Relevant to CARLA's server deployment
+- **PCG (Procedural Content Generation) 50+ fixes** — GPU/CPU rotation mismatch,
+  attribute handling, metadata operations. Affects map generation pipeline
+- **Interchange (FBX import) fixes** — Skeletal mesh placement, animation curves,
+  bind pose handling. Improves asset import stability
 
-### カテゴリ別コミット数
+### Commits by Category
 
-| カテゴリ | コミット数 | CARLA 関連度 |
-|---------|-------:|-----------|
-| クラッシュ修正 | ~110 | 高 |
-| レンダリング/グラフィックス | ~107 | 高 |
-| ローカライゼーション | ~130 | 低 |
-| エディタ/ツール | ~120 | 中 |
-| アニメーション/リギング | ~60 | 低 |
-| PCG | ~50 | 中 |
-| Linux/プラットフォーム | ~26 | 高 |
-| ナビゲーション | 9 | 高 |
-| Pixel Streaming | 9 | 中 |
-| その他 | ~60 | 低 |
+| Category | Commits | CARLA Relevance |
+|----------|--------:|-----------------|
+| Crash fixes | ~110 | High |
+| Rendering / Graphics | ~107 | High |
+| Localization | ~130 | Low |
+| Editor / Tools | ~120 | Medium |
+| Animation / Rigging | ~60 | Low |
+| PCG | ~50 | Medium |
+| Linux / Platform | ~26 | High |
+| Navigation | 9 | High |
+| Pixel Streaming | 9 | Medium |
+| Other | ~60 | Low |
 
-## max_stress シナリオについて
+## max_stress Scenario Note
 
-max_stress（夜+雨+霧 + 50v + 30w + 6xRGB + 2xDepth + LiDAR + SemanticLiDAR + Radar）は
-プレパッチ・ポストパッチとも全20回クラッシュ（成功率 0%）。libc++ uncaught exception で
-ワーカーが異常終了する。これはパッチの問題ではなく、この構成がサーバーの処理限界を超えて
-いるため。比較対象から除外。
+max_stress (night+rain+fog + 50v + 30w + 6xRGB + 2xDepth + LiDAR + SemanticLiDAR + Radar)
+crashed in all 20 runs on both pre-patch and post-patch (0% success rate). The worker
+process terminated with libc++ uncaught exception. This is not a patch issue — this
+configuration exceeds the server's processing limits. Excluded from comparison.
 
-## バージョンアップ推奨の考察
+## Upgrade Recommendation
 
-### 検出された実コスト
+### Measured Costs
 
-20回反復のWelch's t検定により、以下の増加が統計的に有意（p < 0.01）と確認された:
+Welch's t-test with 20 repetitions confirmed the following statistically significant
+(p < 0.01) increases:
 
-| メトリクス | 増加幅 | 影響の実質性 |
-|-----------|--------|------------|
-| Server RSS | +52〜317 MB (シナリオ依存) | 64 GB マシンで 0.1〜0.5% — **無視可能** |
-| Server VMS | +148〜505 MB (idle/traffic/sensors) | 仮想アドレス空間のみ — **無視可能** |
-| Server Threads | +1〜6 | PSO プリキャッシュ等の追加ワーカー — **無視可能** |
-| VRAM (traffic) | +136 MB | 32 GB VRAM の 0.4% — **無視可能** |
+| Metric | Increase | Practical Significance |
+|--------|----------|----------------------|
+| Server RSS | +52 ~ 317 MB (scenario-dependent) | 0.1 ~ 0.5% of 64 GB — **negligible** |
+| Server VMS | +148 ~ 505 MB (idle/traffic/sensors) | Virtual address space only — **negligible** |
+| Server Threads | +1 ~ 6 | PSO precache workers etc. — **negligible** |
+| VRAM (traffic) | +136 MB | 0.4% of 32 GB VRAM — **negligible** |
 
-combined シナリオでは VMS が -140 MB（ポストパッチの方が小さい）、Threads が -1 という
-逆方向の結果も出ており、増加は全シナリオで一律ではない。
+In the combined scenario, VMS was -140 MB (post-patch smaller) and Threads -1,
+showing that increases are not uniform across all scenarios.
 
-### 検出されなかった差（ノイズ）
+### Not Detected (Noise)
 
-| メトリクス | シナリオ | 判定 |
-|-----------|---------|------|
-| VRAM | idle, sensors_ego, combined | NOISE（run-to-run 変動の範囲内）|
-| Server RSS | combined | NOISE（p=0.057）|
-| GPU Util / CPU Util / FPS | 全シナリオ | NOISE |
+| Metric | Scenarios | Verdict |
+|--------|-----------|--------|
+| VRAM | idle, sensors_ego, combined | NOISE (within run-to-run variation) |
+| Server RSS | combined | NOISE (p=0.057) |
+| GPU Util / CPU Util / FPS | All scenarios | NOISE |
 
-### 前回 v2 レポートとの比較
+### Comparison with v2 Report
 
-| メトリクス | v2 評価（1回計測） | v3 評価（20回計測+t検定） |
-|-----------|------------------|----------------------|
-| VRAM | 微増 (+52〜448 MB) | **大半 NOISE**（traffic のみ +136 MB で REAL）|
-| Server RSS | 微増 (+146〜188 MB) | **REAL** (+52〜317 MB、シナリオ依存) |
-| Server VMS | 微増 (+1,083〜1,124 MB) | **部分的 REAL** (+148〜505 MB、combined は逆に -140) |
-| Server Threads | 微増 (+14) | **部分的 REAL** (+1〜6、combined は -1) |
+| Metric | v2 Assessment (single run) | v3 Assessment (20 runs + t-test) |
+|--------|---------------------------|--------------------------------|
+| VRAM | Slight increase (+52 ~ 448 MB) | **Mostly NOISE** (only traffic +136 MB is REAL) |
+| Server RSS | Slight increase (+146 ~ 188 MB) | **REAL** (+52 ~ 317 MB, scenario-dependent) |
+| Server VMS | Slight increase (+1,083 ~ 1,124 MB) | **Partially REAL** (+148 ~ 505 MB, combined is -140) |
+| Server Threads | Slight increase (+14) | **Partially REAL** (+1 ~ 6, combined is -1) |
 
-v2 の VRAM +448 MB は run-to-run 変動（range ~441 MB）に埋もれるノイズだった。
-VMS/Threads の増加幅は v2 の半分以下に修正された。
+The v2 VRAM +448 MB was noise buried in run-to-run variation (range ~441 MB).
+VMS/Threads increases were revised to less than half of v2 estimates.
 
-### 補助メトリクスの知見
+### Secondary Metrics Findings
 
-- **GPU Util / CPU Util / Server CPU**: 全シナリオで NOISE。パッチによる CPU/GPU 負荷変化なし
-- **GPU Power / GPU Temp**: 全シナリオで NOISE〜BORDERLINE。実質差なし
-- **FPS**: 全シナリオで 20.0 FPS 維持。**性能劣化なし**
+- **GPU Util / CPU Util / Server CPU**: NOISE across all scenarios. No CPU/GPU load change from the patch
+- **GPU Power / GPU Temp**: NOISE to BORDERLINE across all scenarios. No practical difference
+- **FPS**: 20.0 FPS maintained across all scenarios. **No performance degradation**
 
-### サーバー安定性
+### Server Stability
 
-| シナリオ | Pre 成功率 | Post 成功率 |
-|---------|-----------|------------|
+| Scenario | Pre Success Rate | Post Success Rate |
+|---------|-----------------|-------------------|
 | idle | 15/20 (75%) | 16/20 (80%) |
 | traffic_50v_30w | 20/20 (100%) | 20/20 (100%) |
 | sensors_ego | 20/20 (100%) | 19/20 (95%) |
 | combined | 18/20 (90%) | 19/20 (95%) |
 | max_stress | 0/20 (0%) | 0/20 (0%) |
 
-安定性に有意差なし。idle のタイムアウトは同期モードの再接続タイミング問題であり、
-両バージョンで同程度発生。max_stress は両バージョンで動作不能（テスト構成の問題）。
+No significant stability difference. Idle timeouts are a synchronous mode reconnection
+timing issue, occurring at similar rates on both versions. max_stress is inoperable
+on both versions (test configuration limitation).
 
-### 結論: **5.5.4 パッチ適用を推奨**
+### Conclusion: **Recommend applying the 5.5.4 patch**
 
-**理由:**
+**Reasons:**
 
-1. **コストは統計的に有意だが実質的に無視可能**: RSS +52〜317 MB（64 GB の 0.5% 以下）、
-   VMS +148〜505 MB（仮想空間のみ）、Threads +1〜6、VRAM は大半ノイズ
-2. **性能劣化なし**: FPS 20.0 維持、GPU/CPU 使用率に有意差なし
-3. **安定性に差なし**: 成功率は両バージョンで同等
-4. **パッチの利点**（v2 で確認済み）: レイトレーシングパイプライン最適化による
-   描画ストレスシナリオでの GPU 使用率 -28.7%、電力 -68.5W の大幅な効率改善
-5. **1,079 コミットのバグ修正**: ナビゲーションシステム（歩行者/車両 AI の基盤）の
-   クラッシュ修正 9 件、レンダリング/グラフィックス修正 107 件、クラッシュ修正 110 件、
-   Linux 固有修正 26 件。特にナビゲーション系とレイトレーシング系の修正は
-   CARLA の中核機能に直結
+1. **Costs are statistically significant but practically negligible**: RSS +52 ~ 317 MB
+   (<0.5% of 64 GB), VMS +148 ~ 505 MB (virtual space only), Threads +1 ~ 6,
+   VRAM is mostly noise
+2. **No performance degradation**: FPS 20.0 maintained, no significant GPU/CPU utilization change
+3. **No stability difference**: Success rates are equivalent across both versions
+4. **Patch benefits** (confirmed in v2): Ray tracing pipeline optimization yielding
+   GPU utilization -28.7% and power -68.5W improvement in rendering stress scenarios
+5. **1,079 bug fix commits**: Navigation system (walker/vehicle AI foundation) crash
+   fixes (9), rendering/graphics fixes (107), general crash fixes (110),
+   Linux-specific fixes (26). Navigation and ray tracing fixes directly impact
+   CARLA's core functionality
 
-64 GB RAM / 32 GB VRAM 環境では、数百 MB のメモリ微増は実運用に影響しない。
-パッチの利点（GPU 効率改善、バグ修正）がコストを大幅に上回る。
-
+On a 64 GB RAM / 32 GB VRAM system, a few hundred MB of memory increase has no
+practical impact on operations. The patch's benefits (GPU efficiency improvements,
+bug fixes) far outweigh the costs.
