@@ -7,11 +7,15 @@ on:
         type: string
         required: false
         default: "22.04"
+      vcpu:
+        type: string
+        required: false
+        default: "30"
 
 jobs:
   build:
-    name: Build (Ubuntu ${{ inputs.ubuntu-version }})
-    runs-on: ubicloud-standard-30
+    name: Build (Ubuntu ${{ inputs.ubuntu-version }}, ${{ inputs.vcpu }} vCPU)
+    runs-on: ubicloud-standard-${{ inputs.vcpu }}
     container:
       image: ghcr.io/${{ github.repository_owner }}/carla-ue5-toolchain:${{ inputs.ubuntu-version }}
       credentials:
@@ -39,6 +43,9 @@ jobs:
       - name: Activate conda environment
         run: conda activate carla310
 
+      - name: Record build start
+        run: echo "BUILD_START=$(date +%s)" >> "$GITHUB_ENV"
+
       - name: Configure
         run: |
           cmake --preset Release \
@@ -56,10 +63,25 @@ jobs:
       - name: Build PythonAPI
         run: cmake --build Build/Release --target carla-python-api
 
+      - name: Record benchmark result
+        run: |
+          BUILD_SECONDS=$(( $(date +%s) - BUILD_START ))
+          echo "Build phase: ${BUILD_SECONDS}s"
+          printf '{"vcpu": %s, "ubuntu": "%s", "build_seconds": %s}\n' \
+            "${{ inputs.vcpu }}" "${{ inputs.ubuntu-version }}" "${BUILD_SECONDS}" \
+            > bench.json
+          cat bench.json
+
+      - name: Upload benchmark result
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-${{ inputs.vcpu }}
+          path: bench.json
+
       - name: Build summary
         if: always()
         run: |
           echo "## Build Summary (Ubuntu ${{ inputs.ubuntu-version }})" >> $GITHUB_STEP_SUMMARY
-          echo "- Runner: ubicloud-standard-30" >> $GITHUB_STEP_SUMMARY
+          echo "- Runner: ubicloud-standard-${{ inputs.vcpu }}" >> $GITHUB_STEP_SUMMARY
           echo "- Container: carla-ue5-toolchain:${{ inputs.ubuntu-version }}" >> $GITHUB_STEP_SUMMARY
           echo "- Targets: carla-client, carla-server, carla-python-api" >> $GITHUB_STEP_SUMMARY
