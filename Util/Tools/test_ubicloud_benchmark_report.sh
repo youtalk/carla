@@ -5,6 +5,9 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT="${HERE}/ubicloud_benchmark_report.sh"
 FAILED=0
+T1=""
+T2=""
+trap 'rm -rf "$T1" "$T2"' EXIT
 
 assert_contains() {
   # $1 = haystack, $2 = needle, $3 = label
@@ -67,6 +70,5 @@ OUT2="$(bash "$SCRIPT" "$T2/artifacts" "$T2/jobs.json")"
 # 8: ceil(1200/60)=20 -> 20*8*.0004=0.0640 ; 16: 10 -> 10*16*.0004=0.0640 ; 30: 7 -> 7*30*.0004=0.0840
 assert_contains "$OUT2" "Recommended (Balanced rule): ubicloud-standard-16" "T2: winner is 16"
 
-rm -rf "$T1" "$T2"
 if [[ "$FAILED" -ne 0 ]]; then echo "TESTS FAILED"; exit 1; fi
 echo "ALL TESTS PASSED"

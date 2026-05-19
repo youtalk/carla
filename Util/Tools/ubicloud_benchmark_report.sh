@@ -25,6 +25,7 @@ for v in "${VCPUS[@]}"; do
   read -r start end < <(jq -r --arg v "$v" \
     '.jobs[] | select(.name | test("vCPU " + $v + " /")) | "\(.started_at) \(.completed_at)"' \
     "$JOBS_JSON")
+  [[ -n "$start" && -n "$end" ]] || { echo "ERROR: no job entry found for vCPU $v in $JOBS_JSON" >&2; exit 1; }
   s="$(date -d "$start" +%s)"
   e="$(date -d "$end" +%s)"
   JOB_S[$v]=$(( e - s ))
@@ -63,6 +64,8 @@ for v in "${VCPUS[@]}"; do
   fi
 done
 
+# If several larger sizes qualify, the loop runs to completion so the largest
+# one wins (maximize speed within the cost tolerance).
 winner="$cost_opt"
 for v in "${VCPUS[@]}"; do
   (( v > cost_opt )) || continue
