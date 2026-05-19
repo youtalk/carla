@@ -1,0 +1,50 @@
+name: Ubicloud-Benchmark
+
+on:
+  workflow_dispatch:
+
+jobs:
+  benchmark:
+    name: vCPU ${{ matrix.vcpu }}
+    strategy:
+      fail-fast: false
+      matrix:
+        vcpu: ["8", "16", "30"]
+    uses: ./.github/workflows/_ci-ubicloud.yml
+    with:
+      ubuntu-version: "24.04"
+      vcpu: ${{ matrix.vcpu }}
+
+  report:
+    name: Cost-performance report
+    needs: benchmark
+    runs-on: ubicloud-standard-2
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download benchmark artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: bench-*
+          path: artifacts
+
+      - name: Fetch job durations
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs?per_page=100" > jobs.json
+
+      - name: Generate report
+        run: |
+          bash Util/Tools/ubicloud_benchmark_report.sh artifacts jobs.json \
+            | tee report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-report
+          path: report.md
