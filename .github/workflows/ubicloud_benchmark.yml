@@ -2,6 +2,11 @@ name: Ubicloud-Benchmark
 
 on:
   workflow_dispatch:
+  # TEMPORARY: lets the benchmark run from the feature branch before the
+  # workflow is registered on the default branch. Removed before the PR.
+  push:
+    branches:
+      - ci/ubicloud-vcpu-benchmark
 
 jobs:
   benchmark:
