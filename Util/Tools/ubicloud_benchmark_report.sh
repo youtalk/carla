@@ -18,7 +18,9 @@ VCPUS=(8 16 30)
 declare -A BUILD_S JOB_S BILLED COST
 
 for v in "${VCPUS[@]}"; do
-  BUILD_S[$v]="$(jq -r '.build_seconds' "${ARTIFACT_DIR}/bench-${v}/bench.json")"
+  bench_file="${ARTIFACT_DIR}/bench-${v}/bench.json"
+  [[ -f "$bench_file" ]] || { echo "ERROR: missing benchmark artifact $bench_file" >&2; exit 1; }
+  BUILD_S[$v]="$(jq -r '.build_seconds' "$bench_file")"
 done
 
 for v in "${VCPUS[@]}"; do

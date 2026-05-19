@@ -7,6 +7,8 @@ on:
         type: string
         required: false
         default: "22.04"
+      # Runner vCPU count. Default chosen by the cost-performance
+      # benchmark; see docs/ci-ubicloud-benchmark.md.
       vcpu:
         type: string
         required: false
