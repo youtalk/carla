@@ -3,7 +3,7 @@
 
 Loads the named CARLA map ``NishishinjukuMap`` via ``client.load_world`` so the
 AWSIM 3D environment (buildings, ground) renders together with the OpenDRIVE
-road network installed at ``Content/Carla/Maps/OpenDrive/NishishinjukuMap.xodr``.
+road network installed at the map's OpenDrive ``NishishinjukuMap.xodr``.
 Moves the spectator to an overhead view and optionally saves a screenshot.
 
 Prerequisite: a CARLA server with ``NishishinjukuMap`` cooked/available must be
@@ -43,16 +43,15 @@ def compute_overhead_view(points):
     return center_x, center_y, height, -90.0
 
 
-def _topology_points(carla_map):
+def _topology_points(topology, spawn_points):
     """Collect (x, y) points from a map's topology, or its spawn points."""
     points = []
-    for wp_a, wp_b in carla_map.get_topology():
+    for wp_a, wp_b in topology:
         for waypoint in (wp_a, wp_b):
             loc = waypoint.transform.location
             points.append((loc.x, loc.y))
     if not points:
-        points = [(sp.location.x, sp.location.y)
-                  for sp in carla_map.get_spawn_points()]
+        points = [(sp.location.x, sp.location.y) for sp in spawn_points]
     return points
 
 
@@ -76,7 +75,7 @@ def main():
     carla_map = world.get_map()
     topology = carla_map.get_topology()
     spawn_points = carla_map.get_spawn_points()
-    points = _topology_points(carla_map)
+    points = _topology_points(topology, spawn_points)
     if not points:
         print("ERROR: loaded world has no road topology", file=sys.stderr)
         sys.exit(1)
@@ -97,12 +96,12 @@ def main():
           % (center_x, center_y, height))
 
     if args.screenshot:
-        _save_screenshot(world, carla, center_x, center_y, height,
-                         args.screenshot)
+        _save_screenshot(world, center_x, center_y, height, args.screenshot)
 
 
-def _save_screenshot(world, carla, x, y, z, out_path):
+def _save_screenshot(world, x, y, z, out_path):
     """Spawn a temporary overhead RGB camera and save one frame to out_path."""
+    import carla
     blueprint = world.get_blueprint_library().find("sensor.camera.rgb")
     blueprint.set_attribute("image_size_x", "1920")
     blueprint.set_attribute("image_size_y", "1080")
