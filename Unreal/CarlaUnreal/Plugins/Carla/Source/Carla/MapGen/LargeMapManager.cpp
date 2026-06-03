@@ -11,6 +11,7 @@
 #include "UncenteredPivotPointMesh.h"
 
 #include "Walker/WalkerBase.h"
+#include "Carla.h"
 #include "Carla/Game/Tagger.h"
 #include "Carla/Game/CarlaGameModeBase.h"
 #include "Carla/Traffic/TrafficSignBase.h"
@@ -18,6 +19,7 @@
 #include "Carla/Vehicle/CustomTerrainPhysicsComponent.h"
 
 #include <util/ue-header-guard-begin.h>
+#include "Engine/Level.h"
 #include "Engine/WorldComposition.h"
 #include "Engine/ObjectLibrary.h"
 #include "Misc/FileHelper.h"
@@ -144,7 +146,21 @@ void ALargeMapManager::OnLevelAddedToWorld(ULevel* InLevel, UWorld* InWorld)
   LM_LOG(Warning, "OnLevelAddedToWorld");
   ATagger::TagActorsInLevel(*InLevel, true);
 
-  AdjustSignsHeightToGround();
+  // Only the actors of the level that just streamed in need adjusting, so
+  // scope the scan to InLevel instead of querying the whole world.
+  if (InLevel)
+  {
+    TArray<AActor*> LevelActors;
+    LevelActors.Reserve(InLevel->Actors.Num());
+    for (AActor* Actor : InLevel->Actors)
+    {
+      if (Actor)
+      {
+        LevelActors.Add(Actor);
+      }
+    }
+    AdjustSignsHeightToGround(LevelActors);
+  }
 
   //FDebug::DumpStackTraceToLog(ELogVerbosity::Log);
 }
@@ -157,7 +173,7 @@ void ALargeMapManager::OnLevelRemovedFromWorld(ULevel* InLevel, UWorld* InWorld)
   Tile.TilesSpawned = false;
 }
 
-void ALargeMapManager::AdjustSignsHeightToGround()
+void ALargeMapManager::AdjustSignsHeightToGround(const TArray<AActor*>& Candidates)
 {
   UWorld* World = GetWorld();
   if (!World)
@@ -165,21 +181,33 @@ void ALargeMapManager::AdjustSignsHeightToGround()
     return;
   }
 
-  TArray<AActor*> SignActors;
-  UGameplayStatics::GetAllActorsOfClass(
-      World, ATrafficSignBase::StaticClass(), SignActors);
-
   const TArray<AActor*> NoIgnoredActors;
   const TArray<UPrimitiveComponent*> NoIgnoredComponents;
   bool bAnyAdjusted = false;
-  for (AActor* Actor : SignActors)
+  int32 GroundNotFoundCount = 0;
+  for (AActor* Actor : Candidates)
   {
     ATrafficSignBase* Sign = Cast<ATrafficSignBase>(Actor);
+    if (!Sign)
+    {
+      continue;
+    }
     if (TrafficSignHeightUtils::AdjustSignToGround(
             World, Sign, NoIgnoredActors, NoIgnoredComponents))
     {
       bAnyAdjusted = true;
     }
+    else if (!Sign->bPositioned)
+    {
+      ++GroundNotFoundCount;
+    }
+  }
+
+  if (GroundNotFoundCount > 0)
+  {
+    UE_LOG(LogCarla, Warning,
+        TEXT("Could not find ground for %d traffic sign(s)"),
+        GroundNotFoundCount);
   }
 
   if (bAnyAdjusted)
@@ -244,7 +272,12 @@ void ALargeMapManager::OnActorSpawned(
       // the car without ground underneath
       World->FlushLevelStreaming();
 
-      AdjustSignsHeightToGround();
+      // Multiple tiles may have streamed in for the hero, so scan all signs;
+      // the bPositioned flag keeps already-adjusted ones from re-tracing.
+      TArray<AActor*> SignActors;
+      UGameplayStatics::GetAllActorsOfClass(
+          World, ATrafficSignBase::StaticClass(), SignActors);
+      AdjustSignsHeightToGround(SignActors);
 
       IsHeroVehicle = true;
     }

@@ -66,7 +66,7 @@ namespace TrafficSignHeightUtils
     if (!AdjustLocationToGround(
             World, AdjustedLocation, IgnoredActors, IgnoredComponents))
     {
-      UE_LOG(LogCarla, Warning,
+      UE_LOG(LogCarla, Verbose,
           TEXT("Could not find ground for traffic sign %s at %s"),
           *Sign->GetName(), *OriginalLocation.ToString());
       return false;
@@ -75,6 +75,8 @@ namespace TrafficSignHeightUtils
     const float ZOffset = AdjustedLocation.Z - OriginalLocation.Z;
 
     USceneComponent* Root = Sign->GetRootComponent();
+    const EComponentMobility::Type OriginalMobility =
+        Root ? Root->Mobility.GetValue() : EComponentMobility::Static;
     if (Root)
     {
       Root->SetMobility(EComponentMobility::Movable);
@@ -82,9 +84,9 @@ namespace TrafficSignHeightUtils
 
     Sign->SetActorLocation(AdjustedLocation);
 
-    TArray<UBoxComponent*> BoxComponents;
-    Sign->GetComponents<UBoxComponent>(BoxComponents);
-    for (UBoxComponent* BoxComp : BoxComponents)
+    // Shift only the trigger volumes (not every box component on the actor) so
+    // they keep their world position while the visible mesh is grounded.
+    for (UBoxComponent* BoxComp : Sign->GetTriggerVolumes())
     {
       if (!BoxComp)
       {
@@ -98,7 +100,7 @@ namespace TrafficSignHeightUtils
     Sign->UpdateComponentTransforms();
     if (Root)
     {
-      Root->SetMobility(EComponentMobility::Static);
+      Root->SetMobility(OriginalMobility);
     }
 
     Sign->bPositioned = true;

@@ -282,10 +282,21 @@ void ATrafficLightManager::GenerateSignalsAndTrafficLights()
       UWorld* World = GetWorld();
       const TArray<AActor*> NoIgnoredActors;
       const TArray<UPrimitiveComponent*> NoIgnoredComponents;
+      int32 GroundNotFoundCount = 0;
       for (ATrafficSignBase* Sign : TrafficSigns)
       {
-        TrafficSignHeightUtils::AdjustSignToGround(
-            World, Sign, NoIgnoredActors, NoIgnoredComponents);
+        if (!TrafficSignHeightUtils::AdjustSignToGround(
+                World, Sign, NoIgnoredActors, NoIgnoredComponents)
+            && IsValid(Sign) && !Sign->bPositioned)
+        {
+          ++GroundNotFoundCount;
+        }
+      }
+      if (GroundNotFoundCount > 0)
+      {
+        UE_LOG(LogCarla, Warning,
+            TEXT("Could not find ground for %d traffic sign(s)"),
+            GroundNotFoundCount);
       }
     }
 
