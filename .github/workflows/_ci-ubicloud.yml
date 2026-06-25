@@ -1,0 +1,89 @@
+name: Ubicloud CI
+
+on:
+  workflow_call:
+    inputs:
+      ubuntu-version:
+        type: string
+        required: false
+        default: "22.04"
+      # Runner vCPU count. Default chosen by the cost-performance
+      # benchmark; see docs/ci-ubicloud-benchmark.md.
+      vcpu:
+        type: string
+        required: false
+        default: "8"
+
+jobs:
+  build:
+    name: Build (Ubuntu ${{ inputs.ubuntu-version }}, ${{ inputs.vcpu }} vCPU)
+    runs-on: ubicloud-standard-${{ inputs.vcpu }}
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/carla-ue5-toolchain:${{ inputs.ubuntu-version }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    env:
+      CARLA_UNREAL_ENGINE_PATH: /unreal-engine
+
+    defaults:
+      run:
+        shell: bash -leo pipefail {0}
+
+    steps:
+      - name: Init conda
+        run: |
+          conda init bash
+          echo "source activate carla310" >> ~/.bashrc
+          cat <<'EOF' > ~/.bash_profile
+          if [ -f ~/.bashrc ]; then source ~/.bashrc; fi
+          EOF
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Activate conda environment
+        run: conda activate carla310
+
+      - name: Record build start
+        run: echo "BUILD_START=$(date +%s)" >> "$GITHUB_ENV"
+
+      - name: Configure
+        run: |
+          cmake --preset Release \
+            -DENABLE_ROS2=ON \
+            -DBUILD_CARLA_UNREAL=OFF \
+            -DBUILD_EXAMPLES=OFF \
+            -Dstandard_math_library_linked_to_as_m=TRUE
+
+      - name: Build LibCarla Client
+        run: cmake --build Build/Release --target carla-client
+
+      - name: Build LibCarla Server
+        run: cmake --build Build/Release --target carla-server
+
+      - name: Build PythonAPI
+        run: cmake --build Build/Release --target carla-python-api
+
+      - name: Record benchmark result
+        run: |
+          BUILD_SECONDS=$(( $(date +%s) - BUILD_START ))
+          echo "Build phase: ${BUILD_SECONDS}s"
+          printf '{"vcpu": %s, "ubuntu": "%s", "build_seconds": %s}\n' \
+            "${{ inputs.vcpu }}" "${{ inputs.ubuntu-version }}" "${BUILD_SECONDS}" \
+            > bench.json
+          cat bench.json
+
+      - name: Upload benchmark result
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-${{ inputs.vcpu }}
+          path: bench.json
+
+      - name: Build summary
+        if: always()
+        run: |
+          echo "## Build Summary (Ubuntu ${{ inputs.ubuntu-version }})" >> $GITHUB_STEP_SUMMARY
+          echo "- Runner: ubicloud-standard-${{ inputs.vcpu }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Container: carla-ue5-toolchain:${{ inputs.ubuntu-version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Targets: carla-client, carla-server, carla-python-api" >> $GITHUB_STEP_SUMMARY
