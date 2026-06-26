@@ -124,9 +124,18 @@ void ATagger::TagActor(const AActor &Actor, bool bTagForSemanticSegmentation)
   TArray<UStaticMeshComponent *> StaticMeshComponents;
   Actor.GetComponents<UStaticMeshComponent>(StaticMeshComponents);
 
-  for (UStaticMeshComponent *Component : StaticMeshComponents) 
+  for (UStaticMeshComponent *Component : StaticMeshComponents)
   {
     auto Label = GetLabelByPath(Component->GetStaticMesh());
+    // An explicit ComponentTag (e.g. set in the editor for imported meshes whose
+    // content paths are not recognized) takes precedence over the path-derived label.
+    if (Component->ComponentTags.Num() > 0)
+    {
+      const crp::CityObjectLabel Override =
+          GetLabelByFolderName(Component->ComponentTags[0].ToString());
+      if (Override != crp::CityObjectLabel::None)
+        Label = Override;
+    }
     if (Label == crp::CityObjectLabel::Pedestrians && Cast<ACarlaWheeledVehicle>(&Actor))
     {
       Label = crp::CityObjectLabel::Rider;
@@ -146,6 +155,15 @@ void ATagger::TagActor(const AActor &Actor, bool bTagForSemanticSegmentation)
 
   for (USkeletalMeshComponent *Component : SkeletalMeshComponents) {
     auto Label = GetLabelByPath(Component->GetPhysicsAsset());
+    // An explicit ComponentTag (e.g. set in the editor for imported meshes whose
+    // content paths are not recognized) takes precedence over the path-derived label.
+    if (Component->ComponentTags.Num() > 0)
+    {
+      const crp::CityObjectLabel Override =
+          GetLabelByFolderName(Component->ComponentTags[0].ToString());
+      if (Override != crp::CityObjectLabel::None)
+        Label = Override;
+    }
     if (Label == crp::CityObjectLabel::Pedestrians && Cast<ACarlaWheeledVehicle>(&Actor))
     {
       Label = crp::CityObjectLabel::Rider;
