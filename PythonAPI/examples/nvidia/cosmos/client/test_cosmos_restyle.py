@@ -8,6 +8,7 @@ import pytest
 import cosmos_spec
 import cosmos_transfer25
 import cosmos_client
+import cosmos_restyle
 
 
 def _write(tmp_path, name, text):
@@ -161,3 +162,65 @@ def test_restyle_transfer1_injects_overrides_and_delegates(monkeypatch):
     assert config["edge"]["control_weight"] == 0.5
     # the worker's copy keeps sibling keys when overriding input_control
     assert captured["config"]["edge"]["control_weight"] == 0.5
+
+
+def test_parse_args_defaults():
+    args = cosmos_restyle.parse_args(
+        ["p.toml", "--input-video", "rgb.mp4", "--inference-script", "i.py"])
+    assert args.backend == "transfer25"
+    assert args.resolution == "480p"
+    assert args.output == "outputs/"
+
+
+def test_main_transfer25_toml_dry_run(tmp_path):
+    cfg = tmp_path / "p.toml"
+    cfg.write_text('prompt = "a street"\n[seg]\ninput_control="s.mp4"\ncontrol_weight=0.9\n',
+                   encoding="utf-8")
+    out = tmp_path / "out"
+    rc = cosmos_restyle.main([
+        str(cfg), "--input-video", "rgb.mp4", "--seg-video", "seg.mp4",
+        "--inference-script", "i.py", "-o", str(out), "--dry-run"])
+    assert rc == 0
+    spec = json.loads((out / "controlnet_specs.json").read_text())
+    assert spec["video_path"] == "rgb.mp4"
+    assert spec["seg"]["control_path"] == "seg.mp4"
+    assert spec["resolution"] == "480p"
+
+
+def test_main_transfer25_requires_inference_script(tmp_path, monkeypatch):
+    monkeypatch.delenv("COSMOS_TRANSFER25_INFERENCE_SCRIPT", raising=False)
+    cfg = tmp_path / "p.toml"
+    cfg.write_text('prompt = "x"\n', encoding="utf-8")
+    rc = cosmos_restyle.main([str(cfg), "--input-video", "rgb.mp4"])
+    assert rc == 2  # missing --inference-script
+
+
+def test_main_toml_requires_input_video(tmp_path):
+    cfg = tmp_path / "p.toml"
+    cfg.write_text('prompt = "x"\n', encoding="utf-8")
+    rc = cosmos_restyle.main([str(cfg), "--inference-script", "i.py"])
+    assert rc == 2  # .toml config requires --input-video
+
+
+def test_main_transfer1_dispatch(monkeypatch, tmp_path):
+    calls = {}
+    monkeypatch.setattr(
+        cosmos_restyle, "_load_transfer1",
+        lambda: (lambda endpoint, config_data, **kw: calls.update(
+            endpoint=endpoint, kw=kw) or "/tmp/out.mp4"))
+    cfg = tmp_path / "p.toml"
+    cfg.write_text('prompt = "x"\n[seg]\ninput_control="s.mp4"\ncontrol_weight=0.9\n',
+                   encoding="utf-8")
+    rc = cosmos_restyle.main([
+        str(cfg), "--backend", "transfer1", "--endpoint", "http://localhost:8080",
+        "--input-video", "rgb.mp4", "--seg-video", "seg.mp4", "-o", "outputs/"])
+    assert rc == 0
+    assert calls["endpoint"] == "http://localhost:8080"
+    assert calls["kw"]["control_paths"]["seg"] == "seg.mp4"
+
+
+def test_main_transfer1_requires_endpoint(tmp_path):
+    cfg = tmp_path / "p.toml"
+    cfg.write_text('prompt = "x"\n', encoding="utf-8")
+    rc = cosmos_restyle.main([str(cfg), "--backend", "transfer1", "--input-video", "rgb.mp4"])
+    assert rc == 2  # missing --endpoint
