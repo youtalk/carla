@@ -89,7 +89,8 @@ def main(argv=None) -> int:
             control_paths=_control_paths(args), seed=args.seed)
     else:
         spec = config_data  # already a controlnet_specs dict
-    # Determine output directory: treat as file path only if it has a video extension
+    # Determine output directory: treat as file path only if
+    # it ends with a known video extension.
     if args.output.endswith((".mp4", ".avi", ".mov", ".mkv")):
         out_dir = os.path.dirname(args.output) or "."
     else:

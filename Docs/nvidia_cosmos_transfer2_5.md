@@ -188,7 +188,6 @@ control_weight = 0.9
 |------------------|--------------|-------------|
 | `config`         | *(required)* | Path to a `.toml` prompt config or a `.json` controlnet_specs passthrough |
 | `--backend`      | `transfer25` | Restyle backend; choices: `transfer25`, `transfer1` |
-| `-o` / `--output`| `outputs/`   | Output directory or `.mp4` path |
 | `--input-video`  | —            | Input RGB video (required when `config` is a `.toml`) |
 | `--edge-video`   | —            | Override `edge.input_control` from the TOML |
 | `--depth-video`  | —            | Override `depth.input_control` from the TOML |
@@ -200,6 +199,7 @@ control_weight = 0.9
 
 | Argument                | Default                                  | Description |
 |-------------------------|------------------------------------------|-------------|
+| `-o` / `--output`       | `outputs/`                               | Output directory, or a video file path (`.mp4`/`.avi`/`.mov`/`.mkv`) |
 | `--resolution`          | `480p`                                   | Output resolution (e.g. `480p`, `720p`); pick from the GPU matrix above |
 | `--num-gpus`            | `1`                                      | Number of GPUs; values >1 launch via `torchrun --nproc_per_node=N` |
 | `--inference-script`    | `$COSMOS_TRANSFER25_INFERENCE_SCRIPT`    | Path to `cosmos-transfer2.5/examples/inference.py`; falls back to the env var |
@@ -242,6 +242,8 @@ python cosmos_restyle.py example_data/prompts/rain.toml \
   --edge-video example_data/artifacts/edges.mp4 \
   --seg-video example_data/artifacts/semantic_segmentation.mp4
 ```
+
+With `--backend transfer1` the restyled video path is printed to the log and `--output` is not honored.
 
 # Migrating from Cosmos Transfer1
 

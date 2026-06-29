@@ -23,6 +23,6 @@ for toml_file in example_data/prompts/*.toml; do
       --input-video "${INPUT_VIDEO}" --edge-video "${EDGE_VIDEO}" --seg-video "${SEG_VIDEO}" \
       --seed "${seed}" --resolution "${RESOLUTION}" \
       --inference-script "${INFERENCE_SCRIPT}" \
-      --output "outputs/${base_name}_seed_${seed}.mp4"
+      --output "outputs/${base_name}_seed_${seed}"
   done
 done
