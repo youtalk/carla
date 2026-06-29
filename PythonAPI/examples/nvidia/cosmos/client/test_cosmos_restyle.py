@@ -1,9 +1,13 @@
 import json
 import os
 import textwrap
+import warnings
+
 import pytest
+
 import cosmos_spec
 import cosmos_transfer25
+import cosmos_client
 
 
 def _write(tmp_path, name, text):
@@ -124,3 +128,36 @@ def test_run_inference_dry_run_writes_spec_and_skips_exec(tmp_path):
     result = cosmos_transfer25.run_inference(spec, out, inference_script="i.py", dry_run=True)
     assert result == os.path.join(out, "controlnet_specs.json")
     assert os.path.exists(result)
+
+
+def test_restyle_transfer1_injects_overrides_and_delegates(monkeypatch):
+    captured = {}
+
+    def fake_worker(url, config_data, **kwargs):
+        captured["url"] = url
+        captured["config"] = config_data
+        return "/tmp/result.mp4"
+
+    monkeypatch.setattr(cosmos_client, "_async_with_upload_example", fake_worker)
+    config = {"prompt": "x", "input_video_path": "input_video.mp4",
+              "edge": {"input_control": "edges.mp4", "control_weight": 0.5}}
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        out = cosmos_client.restyle_transfer1(
+            "http://localhost:8080", config,
+            control_paths={"edge": "artifacts/edges.mp4"},
+            input_video="artifacts/rgb.mp4", seed=2048)
+
+    assert out == "/tmp/result.mp4"
+    assert captured["url"] == "http://localhost:8080"
+    assert captured["config"]["input_video_path"] == "artifacts/rgb.mp4"
+    assert captured["config"]["edge"]["input_control"] == "artifacts/edges.mp4"
+    assert captured["config"]["seed"] == 2048
+    assert any(issubclass(w.category, DeprecationWarning) for w in caught)
+    # the caller's dict (and its nested tables) must NOT be mutated
+    assert config["input_video_path"] == "input_video.mp4"
+    assert config["edge"]["input_control"] == "edges.mp4"
+    assert config["edge"]["control_weight"] == 0.5
+    # the worker's copy keeps sibling keys when overriding input_control
+    assert captured["config"]["edge"]["control_weight"] == 0.5

@@ -8,6 +8,7 @@ from pathlib import Path
 import argparse
 import toml
 import typing
+import warnings
 import gradio_client.client as gradio_client
 import gradio_client.utils as gradio_utils
 from loguru import logger
@@ -458,6 +459,37 @@ def _submit_with_retry(
 
     details = f"api_name={api_name}, last_error={last_error!r}"
     raise RuntimeError(f"Failed to complete request after {attempts} attempts: {details}")
+
+
+def restyle_transfer1(
+    endpoint: str,
+    config_data: dict,
+    *,
+    control_paths: typing.Optional[dict] = None,
+    input_video: typing.Optional[str] = None,
+    seed: typing.Optional[int] = None,
+) -> str:
+    """Deprecated Cosmos Transfer1 backend (gradio).
+
+    Injects CLI overrides into ``config_data`` and delegates to the gradio
+    upload/generate worker. Use the Transfer 2.5 backend instead.
+    """
+    warnings.warn(
+        "Cosmos Transfer1 is deprecated and will be removed in a future CARLA "
+        "release; use --backend transfer25.",
+        DeprecationWarning, stacklevel=2)
+    logger.warning("Cosmos Transfer1 backend is deprecated; use --backend transfer25")
+
+    config_data = dict(config_data)
+    if input_video:
+        config_data["input_video_path"] = input_video
+    for name, path in (control_paths or {}).items():
+        table = dict(config_data.get(name) or {})
+        table["input_control"] = path
+        config_data[name] = table
+    if seed is not None:
+        config_data["seed"] = int(seed)
+    return _async_with_upload_example(endpoint, config_data)
 
 
 def main():
