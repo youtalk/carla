@@ -43,7 +43,8 @@ nav:
   - 'Scenic': 'tuto_G_scenic.md'
   - 'SYNKROTRON': 'ecosys_synkrotron.md'
   - 'InvertedAI': 'inverted_ai.md'
-  - 'NVIDIA Cosmos Transfer': 'nvidia_cosmos_transfer.md'
+  - 'NVIDIA Cosmos Transfer 2.5': 'nvidia_cosmos_transfer2_5.md'
+  - 'NVIDIA Cosmos Transfer (deprecated)': 'nvidia_cosmos_transfer.md'
 
 - Contributing:
   - 'Guidelines': 'cont_contribution_guidelines.md' 
