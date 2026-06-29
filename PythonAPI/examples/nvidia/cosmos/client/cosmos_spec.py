@@ -5,6 +5,7 @@ the Transfer 2.5 and the (deprecated) Transfer1 backends.
 """
 
 import json
+import os
 import typing
 
 import toml
@@ -59,6 +60,9 @@ def build_controlnet_specs(
     ``--edge-video`` / ``--seg-video`` CLI flags). Modalities absent from both
     the config and ``control_paths`` are omitted, so the model computes them on
     the fly when needed.
+
+    The required upstream ``name`` (sample name) is taken from the config's
+    ``name`` field when present, else derived from the input video's basename.
     """
     control_paths = control_paths or {}
     for field in TRANSFER1_ONLY_FIELDS:
@@ -68,6 +72,9 @@ def build_controlnet_specs(
                 field)
 
     spec = {
+        "name": config_data.get("name")
+        or os.path.splitext(os.path.basename(video_path))[0]
+        or "carla_restyle",
         "prompt": config_data["prompt"],
         "video_path": video_path,
         "guidance": config_data.get("guidance", 3.0),

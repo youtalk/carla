@@ -101,6 +101,17 @@ def test_build_specs_vis_without_input_is_on_the_fly():
     assert spec["vis"] == {"control_weight": 0.3}  # no control_path -> computed on the fly
 
 
+def test_build_specs_name_required_field():
+    # Transfer 2.5's controlnet_specs requires a 'name'; derive it from the
+    # input video basename, but let the config override it.
+    spec = cosmos_spec.build_controlnet_specs(
+        {"prompt": "x"}, video_path="artifacts/rgb.mp4")
+    assert spec["name"] == "rgb"
+    named = cosmos_spec.build_controlnet_specs(
+        {"prompt": "x", "name": "tokyo_night"}, video_path="artifacts/rgb.mp4")
+    assert named["name"] == "tokyo_night"
+
+
 def test_build_command_single_gpu():
     cmd = cosmos_transfer25.build_inference_command(
         "out/controlnet_specs.json", "out",
