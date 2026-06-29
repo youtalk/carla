@@ -42,3 +42,55 @@ def validate_specs(config_data: dict) -> None:
         weight = control.get("control_weight")
         if not isinstance(weight, (int, float)) or isinstance(weight, bool):
             raise ValueError("control '%s' needs a numeric 'control_weight'" % name)
+
+
+def build_controlnet_specs(
+    config_data: dict,
+    *,
+    video_path: str,
+    resolution: str = DEFAULT_RESOLUTION,
+    control_paths: typing.Optional[dict] = None,
+    seed: typing.Optional[int] = None,
+) -> dict:
+    """Translate a CARLA prompt config into a Cosmos Transfer 2.5
+    ``controlnet_specs`` dict.
+
+    ``control_paths`` overrides each modality's input video (mirrors the
+    ``--edge-video`` / ``--seg-video`` CLI flags). Modalities absent from both
+    the config and ``control_paths`` are omitted, so the model computes them on
+    the fly when needed.
+    """
+    control_paths = control_paths or {}
+    for field in TRANSFER1_ONLY_FIELDS:
+        if field in config_data:
+            logger.warning(
+                "ignoring Transfer1-only field '{}' (unused by Transfer 2.5)",
+                field)
+
+    spec = {
+        "prompt": config_data["prompt"],
+        "video_path": video_path,
+        "guidance": config_data.get("guidance", 3.0),
+        "num_steps": config_data.get("num_steps", 35),
+        "resolution": resolution,
+    }
+    if "negative_prompt" in config_data:
+        spec["negative_prompt"] = config_data["negative_prompt"]
+    resolved_seed = seed if seed is not None else config_data.get("seed")
+    if resolved_seed is not None:
+        spec["seed"] = int(resolved_seed)
+
+    for name in CONTROL_MODALITIES:
+        override = control_paths.get(name)
+        table = config_data.get(name)
+        if table is None and override is None:
+            continue
+        table = dict(table) if isinstance(table, dict) else {}
+        entry = {}
+        control_path = (override if override is not None
+                        else table.get("input_control"))
+        if control_path:
+            entry["control_path"] = control_path
+        entry["control_weight"] = table.get("control_weight", 1.0)
+        spec[name] = entry
+    return spec
