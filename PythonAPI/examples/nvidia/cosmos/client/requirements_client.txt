@@ -14,6 +14,6 @@ fastapi==0.115.0
 uvicorn==0.30.6
 streamlit==1.36.0
 toml==0.10.2
-gradio_client==1.11.1
+gradio_client==1.11.1  # Transfer1 backend only (deprecated); lazy-imported by cosmos_restyle.py
 loguru==0.7.3
 opencv-python

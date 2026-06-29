@@ -1,0 +1,17 @@
+# Cosmos Transfer 2.5 recommended scalars. Any prompt under example_data/prompts/
+# also works; Transfer1-only fields (sigma_max, blur_strength) are ignored.
+prompt = "Captured from a roof-mounted vehicle camera, a photorealistic city street; cinematic, ultra high quality, realism, scene structure and vehicles maintained."
+negative_prompt = "low resolution graphics, cartoon, CG, flat scene, unrealistic colors, vehicles change appearance."
+
+# Transfer 2.5 base: ~35 steps. For the distilled checkpoint use num_steps = 4.
+num_steps = 35
+# Transfer 2.5 prefers a lower guidance than Transfer1 (~3 vs 7).
+guidance = 3.0
+
+[edge]
+input_control = "edges.mp4"
+control_weight = 0.5
+
+[seg]
+input_control = "semantic_segmentation.mp4"
+control_weight = 0.9
