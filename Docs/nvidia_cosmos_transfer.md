@@ -1,4 +1,4 @@
-> **Deprecated.** Cosmos Transfer1 is deprecated and will be removed in a future CARLA release. New work should use [Cosmos Transfer 2.5](nvidia_cosmos_transfer2_5.md) via `cosmos_restyle.py` (Transfer1 remains reachable as `--backend transfer1`). Transfer 2.5 is faster, runs on a single consumer GPU (RTX 5090 @ 480p), and needs no cloud server.
+> **Deprecated.** Cosmos Transfer1 is deprecated and will be removed in a future CARLA release. New work should use [Cosmos Transfer 2.5](nvidia_cosmos_transfer2_5.md) via `cosmos_restyle.py` (Transfer1 remains reachable as `--backend transfer1`). Transfer 2.5 is faster, runs locally (no cloud server), and is actively maintained.
 
 # Working with CARLA x Cosmos Transfer
 

@@ -2,16 +2,15 @@
 
 CARLA can be connected to NVIDIA Cosmos Transfer 2.5 to create hyper-realistic variations of the synthetic data generated in CARLA. In this integration, CARLA generates control videos — RGB, semantic segmentation, depth, and edges — using the `carla_cosmos_gen.py` script. The `cosmos_restyle.py` unified entry point then calls the local Cosmos Transfer 2.5 inference script to restyle the footage, with a text prompt and TOML parameters controlling the output style.
 
-Unlike the older Transfer1 integration (which required a remote gradio server), Transfer 2.5 runs fully locally on a single GPU — or across multiple GPUs via `torchrun` — once you have cloned the upstream model and exported `COSMOS_TRANSFER25_INFERENCE_SCRIPT`.
+Unlike the older Transfer1 integration (which required a remote gradio server), Transfer 2.5 runs locally — on a single sufficiently large GPU, or across multiple GPUs via `torchrun` — once you have cloned the upstream model and exported `COSMOS_TRANSFER25_INFERENCE_SCRIPT`. The Cosmos-Transfer2.5-2B model needs roughly 55 GB of VRAM at 720p, so plan for a data-center-class GPU (A100/H100 40–80 GB) or multiple GPUs.
 
 ## Choosing a configuration for your GPU
 
 | GPU (VRAM)                  | `--resolution` | `num_steps`            | `--num-gpus` | Notes |
 |-----------------------------|----------------|------------------------|--------------|-------|
-| RTX 5090 / 4090 (24–32 GB)  | `480p`         | 35 (base) / 4 (distilled) | 1         | Blackwell needs CUDA 12.8+ and an sm_120 PyTorch build. |
-| A100 / H100 (40–80 GB)      | `720p`         | 35 (base) / 4 (distilled) | 1         | Higher fidelity; ~4 min/clip on H100. |
+| A100 / H100 (40–80 GB)      | `720p`         | 35 (base) / 4 (distilled) | 1         | Verified: ~55 GB peak at 720p on an H100. |
 | Multi-GPU (2–8×)            | `720p`         | 35                     | N            | Runner uses `torchrun --nproc_per_node=N`. |
-| Most constrained            | `480p`         | 4 (distilled)          | 1            | Distilled checkpoint, fewest steps. |
+| Lower VRAM                  | `480p`         | 4 (distilled)          | 1            | Distilled checkpoint, fewest steps; still needs a large GPU for the 2B model. |
 
 # Setting up Cosmos Transfer 2.5
 
@@ -36,22 +35,17 @@ pip install -r requirements.txt
 pip install -r client/requirements_client.txt
 ```
 
-## RTX 50-series (Blackwell / sm_120) notes
+## Lowering VRAM with `--disable-guardrails`
 
-!!! note
-    This subsection applies only to RTX 5090 and other Blackwell (sm_120) GPUs. Most users can skip it.
-
-Blackwell GPUs require CUDA 12.8 or later and a PyTorch build compiled for the `sm_120` compute capability. PyTorch builds that target earlier CUDA versions do not load on Blackwell. Install a compatible PyTorch nightly or CUDA 12.8 stable release before running inference on an RTX 5090.
-
-The `--disable-guardrails` flag disables Cosmos's built-in VRAM guardrails, which can reduce peak VRAM usage and speed up inference. This flag is intended for experimentation only and should not be used in production workflows.
+The `--disable-guardrails` flag disables Cosmos's built-in prompt/video guardrail models, which lowers peak VRAM usage and speeds up inference. It is intended for experimentation only and should not be used in production workflows.
 
 ```sh
-# Blackwell: 480p restyle with guardrails disabled (experiments only)
+# 720p restyle with guardrails disabled (experiments only)
 python cosmos_restyle.py example_data/transfer25_defaults.toml \
   --input-video example_data/artifacts/rgb.mp4 \
   --edge-video example_data/artifacts/edges.mp4 \
   --seg-video example_data/artifacts/semantic_segmentation.mp4 \
-  --resolution 480p --disable-guardrails --output outputs/
+  --resolution 720p --disable-guardrails --output outputs/
 ```
 
 # Generating control inputs
