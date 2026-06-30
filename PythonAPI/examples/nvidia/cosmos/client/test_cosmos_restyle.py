@@ -193,8 +193,11 @@ def test_main_transfer25_toml_dry_run(tmp_path):
         "--inference-script", "i.py", "-o", str(out), "--dry-run"])
     assert rc == 0
     spec = json.loads((out / "controlnet_specs.json").read_text())
-    assert spec["video_path"] == "rgb.mp4"
-    assert spec["seg"]["control_path"] == "seg.mp4"
+    # transfer25 absolutizes input paths (upstream resolves them relative to
+    # the spec dir), so they become absolute but keep their basenames.
+    assert os.path.isabs(spec["video_path"]) and spec["video_path"].endswith("/rgb.mp4")
+    assert os.path.isabs(spec["seg"]["control_path"]) and \
+        spec["seg"]["control_path"].endswith("/seg.mp4")
     assert spec["resolution"] == "480p"
 
 

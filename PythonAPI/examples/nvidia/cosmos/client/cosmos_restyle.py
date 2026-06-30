@@ -40,7 +40,7 @@ def parse_args(argv) -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=None)
     # transfer25-only
     parser.add_argument("--resolution", default=cosmos_spec.DEFAULT_RESOLUTION,
-                        help="Output resolution, e.g. 480p (local) or 720p (data-center GPU)")
+                        help="Output resolution, e.g. 480p or 720p")
     parser.add_argument("--num-gpus", type=int, default=1)
     parser.add_argument("--inference-script",
                         default=os.environ.get("COSMOS_TRANSFER25_INFERENCE_SCRIPT"),
@@ -84,9 +84,15 @@ def main(argv=None) -> int:
         return 2
     if is_toml:
         cosmos_spec.validate_specs(config_data)
+        # The upstream inference.py resolves control/video paths relative to
+        # the spec JSON's directory (the output dir), so relative inputs would
+        # not be found. Make them absolute before writing the spec.
+        control_paths = {name: os.path.abspath(path)
+                         for name, path in _control_paths(args).items()}
         spec = cosmos_spec.build_controlnet_specs(
-            config_data, video_path=args.input_video, resolution=args.resolution,
-            control_paths=_control_paths(args), seed=args.seed)
+            config_data, video_path=os.path.abspath(args.input_video),
+            resolution=args.resolution, control_paths=control_paths,
+            seed=args.seed)
     else:
         spec = config_data  # already a controlnet_specs dict
     # Determine output directory: treat as file path only if
