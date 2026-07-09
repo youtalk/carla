@@ -6,8 +6,30 @@
 
 #include <cmath>
 
+#include "carla/Logging.h"
+#include "carla/ros2/publishers/PublisherImpl.h"
+#include "carla/ros2/types/msg/CarlaEgoVehicleStatus.h"
+
 namespace carla {
 namespace ros2 {
+
+struct StatusMsgTraits {
+  using msg_type = msg::CarlaEgoVehicleStatus;
+};
+
+CarlaEgoVehicleStatusPublisher::CarlaEgoVehicleStatusPublisher(std::string base_topic_name)
+  : BasePublisher(base_topic_name + "/vehicle_status"),
+    _impl(std::make_shared<PublisherImpl<StatusMsgTraits>>()) {
+  if (!_impl->Init(GetBaseTopicName())) {
+    log_warning("CarlaEgoVehicleStatusPublisher: Init failed for topic: ", GetBaseTopicName());
+  }
+}
+
+CarlaEgoVehicleStatusPublisher::~CarlaEgoVehicleStatusPublisher() = default;
+
+bool CarlaEgoVehicleStatusPublisher::Publish() {
+  return _impl->Publish();
+}
 
 bool CarlaEgoVehicleStatusPublisher::Write(
     int32_t seconds,

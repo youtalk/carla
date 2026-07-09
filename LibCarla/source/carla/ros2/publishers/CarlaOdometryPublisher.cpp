@@ -4,8 +4,30 @@
 
 #include "CarlaOdometryPublisher.h"
 
+#include "carla/Logging.h"
+#include "carla/ros2/publishers/PublisherImpl.h"
+#include "carla/ros2/types/msg/Odometry.h"
+
 namespace carla {
 namespace ros2 {
+
+struct OdometryMsgTraits {
+  using msg_type = msg::Odometry;
+};
+
+CarlaOdometryPublisher::CarlaOdometryPublisher(std::string base_topic_name)
+  : BasePublisher(base_topic_name + "/odometry"),
+    _impl(std::make_shared<PublisherImpl<OdometryMsgTraits>>()) {
+  if (!_impl->Init(GetBaseTopicName())) {
+    log_warning("CarlaOdometryPublisher: Init failed for topic: ", GetBaseTopicName());
+  }
+}
+
+CarlaOdometryPublisher::~CarlaOdometryPublisher() = default;
+
+bool CarlaOdometryPublisher::Publish() {
+  return _impl->Publish();
+}
 
 bool CarlaOdometryPublisher::Write(
     int32_t seconds,
