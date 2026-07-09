@@ -23,6 +23,7 @@
 #include "publishers/CarlaClockPublisher.h"
 #include "publishers/CarlaRGBCameraPublisher.h"
 #include "publishers/CarlaDepthCameraPublisher.h"
+#include "publishers/CarlaMapPublisher.h"
 #include "publishers/CarlaNormalsCameraPublisher.h"
 #include "publishers/CarlaOpticalFlowCameraPublisher.h"
 #include "publishers/CarlaSSCameraPublisher.h"
@@ -736,6 +737,23 @@ void ROS2::ProcessDataFromCollisionSensor(
   }
 }
 
+void ROS2::ProcessDataFromMap(const std::string &open_drive) {
+  if (!_enabled) {
+    return;
+  }
+  if (open_drive.empty()) {
+    // Reached once per episode start, never per frame, so logging
+    // unconditionally cannot flood the output.
+    log_warning("ROS2: empty OpenDRIVE description, skipping map publish");
+    return;
+  }
+  if (!_map_publisher) {
+    _map_publisher = std::make_shared<CarlaMapPublisher>();
+  }
+  _map_publisher->Write(open_drive);
+  _map_publisher->Publish();
+}
+
 void ROS2::Shutdown() {
   for (auto &element : _publishers) {
     element.second.reset();
@@ -749,6 +767,7 @@ void ROS2::Shutdown() {
   _publishers.clear();
   _transforms.clear();
   _camera_publishers.clear();
+  _map_publisher.reset();
   _subscribers.clear();
   _actor_callbacks.clear();
   _registrations.clear();
