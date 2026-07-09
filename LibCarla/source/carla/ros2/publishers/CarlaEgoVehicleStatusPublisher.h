@@ -8,15 +8,25 @@
 #include <string>
 
 #include "carla/ros2/publishers/BasePublisher.h"
-#include "carla/ros2/publishers/PublisherImpl.h"
 
 #include "carla/ros2/types/msg/CarlaEgoVehicleControl.h"
-#include "carla/ros2/types/msg/CarlaEgoVehicleStatus.h"
 #include "carla/ros2/types/msg/Quaternion.h"
 #include "carla/ros2/types/msg/Vector3.h"
 
 namespace carla {
 namespace ros2 {
+
+  // Forward declarations keep the FastDDS-heavy PublisherImpl<> definition out
+  // of the main carla-server compile unit. The full template definition + the
+  // StatusMsgTraits instantiation live in CarlaEgoVehicleStatusPublisher.cpp,
+  // which is built by the carla-ros2-native ExternalProject (where the
+  // middleware macros and the vendor headers are on the include path). Defining
+  // the constructor in the header instead lets the macro-less carla-server
+  // instantiation of PublisherImpl<>::Init win at link time, where the
+  // middleware factory yields nullptr and the DDS writer is never created. Same
+  // pattern as the neighboring ported publishers (CarlaClockPublisher.{h,cpp}).
+  template <typename Traits> class PublisherImpl;
+  struct StatusMsgTraits;
 
   /// Publishes the current speed, acceleration, orientation and applied
   /// control of a registered vehicle as carla_msgs/CarlaEgoVehicleStatus on
@@ -31,21 +41,15 @@ namespace ros2 {
   /// server side (ROS2.cpp) via UeToRosConversions.h.
   class CarlaEgoVehicleStatusPublisher : public BasePublisher {
     public:
-      struct StatusMsgTraits {
-        using msg_type = msg::CarlaEgoVehicleStatus;
-      };
+      CarlaEgoVehicleStatusPublisher(std::string base_topic_name);
+      ~CarlaEgoVehicleStatusPublisher() override;
 
-      CarlaEgoVehicleStatusPublisher(std::string base_topic_name) :
-        BasePublisher(base_topic_name + "/vehicle_status"),
-        _impl(std::make_shared<PublisherImpl<StatusMsgTraits>>()) {
-          if (!_impl->Init(GetBaseTopicName())) {
-            log_warning("CarlaEgoVehicleStatusPublisher: Init failed for topic: ", GetBaseTopicName());
-          }
-      }
+      CarlaEgoVehicleStatusPublisher(const CarlaEgoVehicleStatusPublisher &) = delete;
+      CarlaEgoVehicleStatusPublisher &operator=(const CarlaEgoVehicleStatusPublisher &) = delete;
+      CarlaEgoVehicleStatusPublisher(CarlaEgoVehicleStatusPublisher &&) noexcept = default;
+      CarlaEgoVehicleStatusPublisher &operator=(CarlaEgoVehicleStatusPublisher &&) noexcept = default;
 
-      bool Publish() {
-        return _impl->Publish();
-      }
+      bool Publish() override;
 
       /// @param orientation vehicle orientation in ROS axes
       /// @param linear_velocity world-frame velocity in m/s, ROS axes

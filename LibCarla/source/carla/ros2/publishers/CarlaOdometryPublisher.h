@@ -8,14 +8,24 @@
 #include <string>
 
 #include "carla/ros2/publishers/BasePublisher.h"
-#include "carla/ros2/publishers/PublisherImpl.h"
 
-#include "carla/ros2/types/msg/Odometry.h"
 #include "carla/ros2/types/msg/Quaternion.h"
 #include "carla/ros2/types/msg/Vector3.h"
 
 namespace carla {
 namespace ros2 {
+
+  // Forward declarations keep the FastDDS-heavy PublisherImpl<> definition out
+  // of the main carla-server compile unit. The full template definition + the
+  // OdometryMsgTraits instantiation live in CarlaOdometryPublisher.cpp, which is
+  // built by the carla-ros2-native ExternalProject (where the middleware macros
+  // and the vendor headers are on the include path). Defining the constructor
+  // in the header instead lets the macro-less carla-server instantiation of
+  // PublisherImpl<>::Init win at link time, where the middleware factory yields
+  // nullptr and the DDS writer is never created. Same pattern as the
+  // neighboring ported publishers (CarlaClockPublisher.{h,cpp}).
+  template <typename Traits> class PublisherImpl;
+  struct OdometryMsgTraits;
 
   /// Publishes the ground-truth pose and body-frame twist of a registered
   /// vehicle as nav_msgs/Odometry on <base_topic>/odometry, once per frame.
@@ -28,21 +38,15 @@ namespace ros2 {
   /// UeToRosConversions.h.
   class CarlaOdometryPublisher : public BasePublisher {
     public:
-      struct OdometryMsgTraits {
-        using msg_type = msg::Odometry;
-      };
+      CarlaOdometryPublisher(std::string base_topic_name);
+      ~CarlaOdometryPublisher() override;
 
-      CarlaOdometryPublisher(std::string base_topic_name) :
-        BasePublisher(base_topic_name + "/odometry"),
-        _impl(std::make_shared<PublisherImpl<OdometryMsgTraits>>()) {
-          if (!_impl->Init(GetBaseTopicName())) {
-            log_warning("CarlaOdometryPublisher: Init failed for topic: ", GetBaseTopicName());
-          }
-      }
+      CarlaOdometryPublisher(const CarlaOdometryPublisher &) = delete;
+      CarlaOdometryPublisher &operator=(const CarlaOdometryPublisher &) = delete;
+      CarlaOdometryPublisher(CarlaOdometryPublisher &&) noexcept = default;
+      CarlaOdometryPublisher &operator=(CarlaOdometryPublisher &&) noexcept = default;
 
-      bool Publish() {
-        return _impl->Publish();
-      }
+      bool Publish() override;
 
       /// @param position vehicle position in ROS axes (meters)
       /// @param orientation vehicle orientation in ROS axes
