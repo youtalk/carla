@@ -44,6 +44,7 @@ class BasePublisher;
 class BaseSubscriber;
 class CarlaCameraPublisher;
 class CarlaClockPublisher;
+class CarlaMapPublisher;
 class CarlaTransformPublisher;
 class BasicSubscriber;
 class BasicPublisher;
@@ -170,6 +171,10 @@ public:
       uint32_t other_actor,
       carla::geom::Vector3D impulse,
       void *actor);
+  // Publishes the OpenDRIVE description of the current map as a latched
+  // topic. Called once per episode; re-publishing refreshes the latched
+  // sample after a map change.
+  void ProcessDataFromMap(const std::string &open_drive);
 
 private:
   struct ActorRegistration {
@@ -223,6 +228,7 @@ private:
   std::unordered_map<void *, ActorRegistration> _registrations;
   std::unordered_map<void *, std::vector<void *>> _actor_parents;
   std::shared_ptr<CarlaClockPublisher> _clock_publisher;
+  std::shared_ptr<CarlaMapPublisher> _map_publisher;
   std::unordered_map<void *, std::shared_ptr<BasePublisher>> _publishers;
   std::unordered_map<void *, std::shared_ptr<CarlaCameraPublisher>> _camera_publishers;
   std::unordered_map<void *, std::shared_ptr<CarlaTransformPublisher>> _transforms;
