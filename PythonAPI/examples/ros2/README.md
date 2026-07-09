@@ -8,7 +8,7 @@ The native ROS 2 interface publishes a latched `std_msgs/String` with the full O
 
 * **Lane markers**: the OpenDRIVE string is parsed client-side and converted into a latched `visualization_msgs/MarkerArray` on `/carla/map_markers`. Lane boundaries are computed from the true lane width given by the OpenDRIVE (centerline plus and minus half the lane width), and each lane edge is published as one continuous polyline.
 * **Hero vehicle and sensors**: a vehicle with camera, lidar, GNSS and IMU drives on autopilot, with every sensor publishing natively (no bridge).
-* **Combined view**: a `map->hero` transform is broadcast every simulation tick, completing the TF chain `map->hero-><sensor>`, so the lidar point cloud and the vehicle TF tree render at their world position on top of the lane network.
+* **Combined view**: this integration build does not broadcast a vehicle TF tree (the native `map->odom`/`odom->hero` transforms are intentionally excluded), so RViz has no transform source and the map markers and lidar point cloud render in their own frames rather than being composed into a single `map`-anchored view.
 
 ## Files
 
@@ -18,7 +18,7 @@ The native ROS 2 interface publishes a latched `std_msgs/String` with the full O
 | `stack.json` | Sensor setup of the hero vehicle. Edit it to adjust the sensors. |
 | `run_map_and_lidar_demo.sh` | Demo entry point. Builds the demo image if missing and runs the demo stack in Docker. |
 | `run_rviz.sh` | Runs RViz in Docker with the bundled preset. |
-| `rviz/ros2_native.rviz` | RViz preset: camera panel, lidar point cloud, TF tree and the map markers display (transient local, fixed frame `map`). |
+| `rviz/ros2_native.rviz` | RViz preset: camera panel, lidar point cloud, a TF tree display (present in the preset but unpopulated on this branch, since no TF is broadcast) and the map markers display (transient local, fixed frame `map`). |
 | `Dockerfile`, `config/` | Base RViz image and the RMW configuration files mounted into the containers. |
 
 The `map_and_lidar_demo/` folder holds the internals of the demo image:
@@ -29,7 +29,6 @@ The `map_and_lidar_demo/` folder holds the internals of the demo image:
 | `map_and_lidar_demo/build.sh` | Builds the `carla-map-and-lidar-demo-<distro>-<rmw>` image. Run automatically by `run_map_and_lidar_demo.sh`. |
 | `map_and_lidar_demo/launcher.sh` | In-image entry point. Launches the helpers and stops them all together when the first one exits or the container is stopped. |
 | `map_and_lidar_demo/map_to_markers.py` | Subscribes to the latched `/carla/map`, parses the OpenDRIVE with the carla Python package (no simulator connection needed) and publishes the lane markers on `/carla/map_markers`. |
-| `map_and_lidar_demo/ego_tf_broadcaster.py` | Broadcasts the `map->hero` transform every simulation tick through the Python API, stamped with simulation time. |
 | `map_and_lidar_demo/cleanup.py` | Destroys leftover hero vehicles and their sensors and restores asynchronous mode. Run automatically at stack startup and shutdown so an unclean exit never leaks a second vehicle publishing on the same topics. |
 
 ## Prerequisites
@@ -87,13 +86,12 @@ The first run builds the `carla-map-and-lidar-demo-<distro>-<rmw>` image automat
 
 `run_rviz.sh` accepts `--distro=<humble|jazzy>` and `--rmw=<fastdds|cyclonedds|zenoh>`; the `--rmw` value must match the middleware the simulator was launched with (e.g. `./run_rviz.sh --distro=humble --rmw=cyclonedds`).
 
-With the bundled preset (`Fixed Frame: map`) you get the combined view: the town lane network, the hero TF tree driving along it, the lidar point cloud rendered at the vehicle's world position and the camera image panel.
+With the bundled preset (`Fixed Frame: map`) you get the town lane network, the lidar point cloud rendered in its own sensor frame (not composed into the `map` frame, since this build does not broadcast a TF tree — see above) and the camera image panel.
 
 Tips:
 
 * The lane centerlines are published in their own marker namespace (`lane_centerlines`) and hidden by default. Enable them under the Map display Namespaces in RViz.
-* To follow the vehicle automatically, set `Views -> Target Frame` to `hero` (the `Orbit` view keeps a fixed compass orientation, `ThirdPersonFollower` rotates with the vehicle heading).
-* If RViz started before the transforms were available it may have dropped the latched map markers. Toggle the Map display checkbox to force a resubscription.
+* If RViz started before the latched topics were available it may have dropped the map markers. Toggle the Map display checkbox to force a resubscription.
 
 ### Running the helpers standalone
 
@@ -102,7 +100,6 @@ Each helper can also run directly from any ROS 2 environment that has the `carla
 ```bash
 python3 ros2_native.py --file stack.json
 python3 map_and_lidar_demo/map_to_markers.py
-python3 map_and_lidar_demo/ego_tf_broadcaster.py
 python3 map_and_lidar_demo/cleanup.py
 ```
 

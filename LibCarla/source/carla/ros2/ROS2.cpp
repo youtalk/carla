@@ -8,6 +8,8 @@
 #include "carla/ros2/ROS2.h"
 #include "carla/geom/GeoLocation.h"
 #include "carla/geom/Vector3D.h"
+#include "carla/rpc/VehicleControl.h"
+#include "carla/rpc/VehiclePhysicsControl.h"
 #include "carla/sensor/data/DVSEvent.h"
 #include "carla/sensor/data/LidarData.h"
 #include "carla/sensor/data/SemanticLidarData.h"
@@ -23,8 +25,11 @@
 #include "publishers/CarlaClockPublisher.h"
 #include "publishers/CarlaRGBCameraPublisher.h"
 #include "publishers/CarlaDepthCameraPublisher.h"
+#include "publishers/CarlaEgoVehicleInfoPublisher.h"
+#include "publishers/CarlaEgoVehicleStatusPublisher.h"
 #include "publishers/CarlaMapPublisher.h"
 #include "publishers/CarlaNormalsCameraPublisher.h"
+#include "publishers/CarlaOdometryPublisher.h"
 #include "publishers/CarlaOpticalFlowCameraPublisher.h"
 #include "publishers/CarlaSSCameraPublisher.h"
 #include "publishers/CarlaISCameraPublisher.h"
@@ -35,6 +40,7 @@
 #include "publishers/CarlaIMUPublisher.h"
 #include "publishers/CarlaGNSSPublisher.h"
 #include "publishers/CarlaTransformPublisher.h"
+#include "publishers/UeToRosConversions.h"
 #include "publishers/CarlaCollisionPublisher.h"
 #include "publishers/BasicPublisher.h"
 
@@ -213,12 +219,24 @@ void ROS2::RegisterVehicle(
   } else {
     _subscribers.insert({actor, std::make_shared<CarlaEgoVehicleControlSubscriber>(actor, base_topic_name, std::move(frame_id))});
   }
+
+  // Register the per-vehicle data publishers
+  VehiclePublishers vehicle_publishers;
+  vehicle_publishers.odometry = std::make_shared<CarlaOdometryPublisher>(base_topic_name);
+  vehicle_publishers.status = std::make_shared<CarlaEgoVehicleStatusPublisher>(base_topic_name);
+  vehicle_publishers.info = std::make_shared<CarlaEgoVehicleInfoPublisher>(base_topic_name);
+  _vehicle_publishers.insert({actor, std::move(vehicle_publishers)});
 }
 
 void ROS2::UnregisterVehicle(void *actor) {
   _subscribers.erase(actor);
   _actor_callbacks.erase(actor);
+  _vehicle_publishers.erase(actor);
   UnregisterSensor(actor);
+}
+
+bool ROS2::IsVehicleRegistered(void *actor) const {
+  return _vehicle_publishers.find(actor) != _vehicle_publishers.end();
 }
 
 void ROS2::AddActorParentRosName(void *actor, void *parent) {
@@ -754,6 +772,126 @@ void ROS2::ProcessDataFromMap(const std::string &open_drive) {
   _map_publisher->Publish();
 }
 
+void ROS2::ProcessDataFromVehicle(
+    void *actor,
+    const carla::geom::Transform vehicle_transform,
+    carla::geom::Vector3D velocity,
+    carla::geom::Vector3D angular_velocity,
+    float delta_seconds,
+    const carla::rpc::VehicleControl &control) {
+  if (!_enabled) {
+    return;
+  }
+  auto it = _vehicle_publishers.find(actor);
+  if (it == _vehicle_publishers.end()) {
+    return;
+  }
+  const std::string frame_id = LookupFrameId(actor);
+
+  // The UE -> ROS coordinate conversion is done here (server side) so the
+  // per-vehicle publishers in the carla-ros2-native library stay free of
+  // carla::geom / carla::rpc, which pull MsgPack + Boost via carla/MsgPack.h.
+  const msg::Quaternion orientation = ue_rotation_to_ros_quaternion(vehicle_transform.rotation);
+
+  // Odometry: pose in the odom frame plus body-frame twist.
+  msg::Vector3 position;
+  position.x = vehicle_transform.location.x;
+  position.y = -vehicle_transform.location.y;
+  position.z = vehicle_transform.location.z;
+  const msg::Vector3 body_velocity =
+      ue_world_velocity_to_ros_body_velocity(velocity, vehicle_transform.rotation);
+  const msg::Vector3 ros_angular_velocity = ue_angular_velocity_to_ros(angular_velocity);
+  it->second.odometry->Write(
+      _seconds, _nanoseconds, "odom", frame_id, position, orientation, body_velocity,
+      ros_angular_velocity);
+  it->second.odometry->Publish();
+
+  // Vehicle status: speed + acceleration from the world-frame velocity and the
+  // echoed control command.
+  const msg::Vector3 ros_velocity = ue_vector_to_ros_vector(velocity);
+  msg::CarlaEgoVehicleControl ros_control;
+  ros_control.throttle = control.throttle;
+  ros_control.steer = control.steer;
+  ros_control.brake = control.brake;
+  ros_control.hand_brake = control.hand_brake;
+  ros_control.reverse = control.reverse;
+  ros_control.gear = control.gear;
+  ros_control.manual_gear_shift = control.manual_gear_shift;
+  it->second.status->Write(
+      _seconds, _nanoseconds, "map", orientation, ros_velocity, delta_seconds, ros_control);
+  it->second.status->Publish();
+}
+
+void ROS2::ProcessVehicleInfo(
+    void *actor,
+    uint32_t id,
+    const std::string &type_id,
+    const std::string &role_name,
+    const carla::geom::Transform vehicle_transform,
+    const carla::rpc::VehiclePhysicsControl &physics_control) {
+  if (!_enabled) {
+    return;
+  }
+  auto it = _vehicle_publishers.find(actor);
+  if (it == _vehicle_publishers.end()) {
+    return;
+  }
+  // Build the ROS message here (server side) so CarlaEgoVehicleInfoPublisher
+  // in the carla-ros2-native library stays free of carla::geom / carla::rpc.
+  msg::CarlaEgoVehicleInfo info;
+  info.id = id;
+  info.type = type_id;
+  info.rolename = role_name;
+
+  // CarlaEgoVehicleInfo mirrors the ros-carla-msgs description, whose physics
+  // fields follow the UE4 PhysX vehicle model. UE5 uses the Chaos model with a
+  // different parameter set, so the fields below are a best-effort mapping:
+  // direct where an equivalent exists, and left at zero where Chaos has no
+  // counterpart (tire damping, throttle/clutch damping rates, clutch strength).
+  info.wheels.reserve(physics_control.wheels.size());
+  for (const auto &wheel : physics_control.wheels) {
+    msg::CarlaEgoVehicleInfoWheel wheel_info;
+    // Chaos exposes a friction multiplier rather than a raw tire-friction
+    // coefficient; it is the closest available analogue.
+    wheel_info.tire_friction = wheel.friction_force_multiplier;
+    wheel_info.damping_rate = 0.0f;  // no Chaos wheel-damping equivalent
+    wheel_info.max_steer_angle = wheel.max_steer_angle * UE_DEG_TO_RAD;
+    wheel_info.radius = wheel.wheel_radius;
+    wheel_info.max_brake_torque = wheel.max_brake_torque;
+    wheel_info.max_handbrake_torque = wheel.max_hand_brake_torque;
+
+    // Wheel locations arrive as world coordinates in centimeters; express
+    // them in the vehicle frame in meters, then flip to right-handed.
+    geom::Vector3D wheel_position{
+        wheel.location.x / 100.0f,
+        wheel.location.y / 100.0f,
+        wheel.location.z / 100.0f};
+    vehicle_transform.InverseTransformPoint(wheel_position);
+    wheel_info.position.x = wheel_position.x;
+    wheel_info.position.y = -wheel_position.y;
+    wheel_info.position.z = wheel_position.z;
+
+    info.wheels.push_back(wheel_info);
+  }
+
+  info.max_rpm = physics_control.max_rpm;
+  info.moi = physics_control.rev_up_moi;  // closest Chaos engine-inertia analogue
+  info.damping_rate_full_throttle = 0.0f;  // no Chaos equivalent
+  info.damping_rate_zero_throttle_clutch_engaged = 0.0f;  // no Chaos equivalent
+  info.damping_rate_zero_throttle_clutch_disengaged = 0.0f;  // no Chaos equivalent
+  info.use_gear_autobox = physics_control.use_automatic_gears;
+  info.gear_switch_time = physics_control.gear_change_time;
+  info.clutch_strength = 0.0f;  // no Chaos clutch model
+  info.mass = physics_control.mass;
+  info.drag_coefficient = physics_control.drag_coefficient;
+  info.center_of_mass.x = physics_control.center_of_mass.x;
+  info.center_of_mass.y = physics_control.center_of_mass.y;
+  info.center_of_mass.z = physics_control.center_of_mass.z;
+
+  it->second.info->Write(info);
+  it->second.info->Publish();
+}
+
 void ROS2::Shutdown() {
   for (auto &element : _publishers) {
     element.second.reset();
@@ -767,6 +905,7 @@ void ROS2::Shutdown() {
   _publishers.clear();
   _transforms.clear();
   _camera_publishers.clear();
+  _vehicle_publishers.clear();
   _map_publisher.reset();
   _subscribers.clear();
   _actor_callbacks.clear();
