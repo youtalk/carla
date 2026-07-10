@@ -24,7 +24,7 @@ CarlaEgoVehicleInfoPublisher::CarlaEgoVehicleInfoPublisher(std::string base_topi
   PublisherQos qos;
   qos.durability = DurabilityKind::TransientLocal;
   if (!_impl->Init(GetBaseTopicName(), qos)) {
-    log_warning("CarlaEgoVehicleInfoPublisher: Init failed for topic: ", GetBaseTopicName());
+    log_error("CarlaEgoVehicleInfoPublisher: Init failed for topic: ", GetBaseTopicName());
   }
 }
 

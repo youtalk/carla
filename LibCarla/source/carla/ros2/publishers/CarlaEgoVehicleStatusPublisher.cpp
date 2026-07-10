@@ -21,7 +21,7 @@ CarlaEgoVehicleStatusPublisher::CarlaEgoVehicleStatusPublisher(std::string base_
   : BasePublisher(base_topic_name + "/vehicle_status"),
     _impl(std::make_shared<PublisherImpl<StatusMsgTraits>>()) {
   if (!_impl->Init(GetBaseTopicName())) {
-    log_warning("CarlaEgoVehicleStatusPublisher: Init failed for topic: ", GetBaseTopicName());
+    log_error("CarlaEgoVehicleStatusPublisher: Init failed for topic: ", GetBaseTopicName());
   }
 }
 
