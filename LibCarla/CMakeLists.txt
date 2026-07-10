@@ -452,6 +452,7 @@ if (BUILD_LIBCARLA_TESTS)
   file (
     GLOB
     LIBCARLA_TEST_COMMON_SOURCES
+    CONFIGURE_DEPENDS
     ${LIBCARLA_SOURCE_PATH}/test/common/*.cpp
   )
 
@@ -460,6 +461,7 @@ if (BUILD_LIBCARLA_TESTS)
     file (
       GLOB
       LIBCARLA_TEST_SERVER_SOURCES
+      CONFIGURE_DEPENDS
       ${LIBCARLA_SOURCE_PATH}/test/server/*.cpp
     )
 
@@ -537,6 +539,7 @@ if (BUILD_LIBCARLA_TESTS)
     file (
       GLOB
       LIBCARLA_TEST_CLIENT_SOURCES
+      CONFIGURE_DEPENDS
       ${LIBCARLA_SOURCE_PATH}/test/client/*.cpp
     )
 
