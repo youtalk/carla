@@ -24,7 +24,7 @@ CarlaMapPublisher::CarlaMapPublisher()
   PublisherQos qos;
   qos.durability = DurabilityKind::TransientLocal;
   if (!_impl->Init(GetBaseTopicName(), qos)) {
-    log_warning("CarlaMapPublisher: Init failed for topic: ", GetBaseTopicName());
+    log_error("CarlaMapPublisher: Init failed for topic: ", GetBaseTopicName());
   }
 }
 
