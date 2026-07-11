@@ -1170,16 +1170,32 @@ namespace road {
       }
     }
 
-    auto min_pos = geom::Vector2D(
-        out_mesh_list.front()->GetVertices().front().x,
-        out_mesh_list.front()->GetVertices().front().y);
-    auto max_pos = min_pos;
+    // Some OpenDRIVE inputs produce lanes/junctions whose generated mesh has
+    // no vertices. Seeding the bounds from out_mesh_list.front() or taking
+    // .front() of an empty vertex list dereferences an absent element and
+    // crashes (SIGSEGV). Seed from the first non-empty mesh and skip empty
+    // meshes; an empty mesh carries no geometry and cannot affect the bounds.
+    geom::Vector2D min_pos(0.0f, 0.0f);
+    geom::Vector2D max_pos(0.0f, 0.0f);
+    bool bounds_initialized = false;
     for (auto & mesh : out_mesh_list) {
-      auto vertex = mesh->GetVertices().front();
+      if (mesh->GetVertices().empty()) {
+        continue;
+      }
+      const auto vertex = mesh->GetVertices().front();
+      if (!bounds_initialized) {
+        min_pos = geom::Vector2D(vertex.x, vertex.y);
+        max_pos = min_pos;
+        bounds_initialized = true;
+      }
       min_pos.x = std::min(min_pos.x, vertex.x);
       min_pos.y = std::min(min_pos.y, vertex.y);
       max_pos.x = std::max(max_pos.x, vertex.x);
       max_pos.y = std::max(max_pos.y, vertex.y);
+    }
+    if (!bounds_initialized) {
+      // No mesh had any vertices: nothing to chunk.
+      return out_mesh_list;
     }
     size_t mesh_amount_x = static_cast<size_t>((max_pos.x - min_pos.x)/params.max_road_length) + 1;
     size_t mesh_amount_y = static_cast<size_t>((max_pos.y - min_pos.y)/params.max_road_length) + 1;
@@ -1189,6 +1205,9 @@ namespace road {
       result.emplace_back(std::make_unique<geom::Mesh>());
     }
     for (auto & mesh : out_mesh_list) {
+      if (mesh->GetVertices().empty()) {
+        continue;
+      }
       auto vertex = mesh->GetVertices().front();
       size_t x_pos = static_cast<size_t>((vertex.x - min_pos.x) / params.max_road_length);
       size_t y_pos = static_cast<size_t>((vertex.y - min_pos.y) / params.max_road_length);
