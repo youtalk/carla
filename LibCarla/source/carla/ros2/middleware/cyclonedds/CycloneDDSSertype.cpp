@@ -10,6 +10,11 @@
 #include "carla/ros2/middleware/MiddlewareConfig.h"
 #include "carla/Logging.h"
 
+// CycloneDDS internal radmin header: provides the nn_rdata fragment-chain
+// struct and the NN_RMSG_PAYLOADOFF / NN_RDATA_PAYLOAD_OFF accessors used to
+// reassemble a received sample in carla_cdr_from_ser().
+#include <dds/ddsi/q_radmin.h>
+
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>
@@ -52,19 +57,36 @@ static uint32_t carla_cdr_serdata_get_size(const struct ddsi_serdata* d) {
 static struct ddsi_serdata* carla_cdr_from_ser(
     const struct ddsi_sertype* type,
     enum ddsi_serdata_kind kind,
-    const struct nn_rdata* /*fragchain*/,
+    const struct nn_rdata* fragchain,
     size_t size)
 {
-  // Fragment-based receive path. CARLA uses local IPC so this should never
-  // be triggered in practice. Log an error so the caller knows the data is
-  // invalid rather than silently returning zero-filled bytes.
-  log_error(
-      "carla_cdr_from_ser: fragmented receive is not supported; "
-      "data will be invalid");
+  // CycloneDDS delivers every received network sample through from_ser as a
+  // fragment chain -- even an unfragmented sample arrives as a single-element
+  // chain -- so this is the hot receive path, not a rare fallback. Reassemble
+  // the full CDR payload, including the 4-byte encapsulation header at offset 0
+  // that deserialize_from_cdr()'s read_encapsulation() expects, by walking the
+  // chain. Mirrors CycloneDDS's own serdata_default_from_ser_common(), but
+  // copies into CARLA's single contiguous buffer (header included) rather than
+  // a separate hdr + payload split.
   struct ddsi_serdata* sd =
       carla_cdr_alloc_serdata(type, kind, static_cast<uint32_t>(size));
-  if (sd) {
-    memset(reinterpret_cast<struct carla_cdr_serdata*>(sd) + 1, 0, size);
+  if (!sd) { return nullptr; }
+  uint8_t* dest = reinterpret_cast<uint8_t*>(
+      reinterpret_cast<struct carla_cdr_serdata*>(sd) + 1);
+  uint32_t off = 0u;
+  for (const struct nn_rdata* frag = fragchain; frag != nullptr;
+       frag = frag->nextfrag) {
+    // Fragments can overlap after retransmits; only copy the bytes this
+    // fragment adds past what has already been assembled.
+    if (frag->maxp1 > off) {
+      const unsigned char* payload =
+          NN_RMSG_PAYLOADOFF(frag->rmsg, NN_RDATA_PAYLOAD_OFF(frag));
+      const uint32_t n = frag->maxp1 - off;
+      if (static_cast<size_t>(off) + n <= size) {
+        memcpy(dest + off, payload + (off - frag->min), n);
+      }
+      off = frag->maxp1;
+    }
   }
   return sd;
 }
