@@ -59,6 +59,10 @@ public:
   // Called when the game starts by the gamemode
   void InitializeTrafficLights();
 
+  // Whether OpenDRIVE-generated signs/lights are snapped to the ground after
+  // spawning. Read by ALargeMapManager so both paths share the same flag.
+  bool GetAdjustSignsHeightToGround() const { return bAdjustSignsHeightToGround; }
+
 private:
 
   void SpawnTrafficLights();
@@ -86,8 +90,9 @@ private:
   TArray<TObjectPtr<ATrafficSignBase>> TrafficSigns;
 
   // When true, snap generated signs/lights to the ground after spawning.
+  // Opt-in: off by default so maps that need it enable it explicitly.
   UPROPERTY(EditAnywhere, Category= "Traffic Light Manager")
-  bool bAdjustSignsHeightToGround = true;
+  bool bAdjustSignsHeightToGround = false;
 
   UPROPERTY(EditAnywhere, Category= "Traffic Light Manager")
   TSubclassOf<AActor> TrafficLightModel_RHT;

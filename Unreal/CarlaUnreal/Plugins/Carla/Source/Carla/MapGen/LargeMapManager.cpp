@@ -14,6 +14,7 @@
 #include "Carla.h"
 #include "Carla/Game/Tagger.h"
 #include "Carla/Game/CarlaGameModeBase.h"
+#include "Carla/Traffic/TrafficLightManager.h"
 #include "Carla/Traffic/TrafficSignBase.h"
 #include "Carla/Traffic/TrafficSignHeightUtils.h"
 #include "Carla/Vehicle/CustomTerrainPhysicsComponent.h"
@@ -181,19 +182,39 @@ void ALargeMapManager::AdjustSignsHeightToGround(const TArray<AActor*>& Candidat
     return;
   }
 
-  const TArray<AActor*> NoIgnoredActors;
-  const TArray<UPrimitiveComponent*> NoIgnoredComponents;
-  bool bAnyAdjusted = false;
-  int32 GroundNotFoundCount = 0;
+  // Opt-in: honour the same flag as the traffic-light manager. Look the manager
+  // up read-only (do not spawn one) so this streaming callback stays free of
+  // side effects when the feature is disabled or there is no manager.
+  AActor* ManagerActor = UGameplayStatics::GetActorOfClass(
+      World, ATrafficLightManager::StaticClass());
+  ATrafficLightManager* Manager = Cast<ATrafficLightManager>(ManagerActor);
+  if (!Manager || !Manager->GetAdjustSignsHeightToGround())
+  {
+    return;
+  }
+
+  // Only OpenDRIVE-generated signs are adjusted; hand-placed ones are left as
+  // authored. Ignore the whole generated set during the trace so the ray
+  // reaches the terrain instead of the signs' own collision (see PR #9773).
+  TArray<AActor*> GeneratedSigns;
+  GeneratedSigns.Reserve(Candidates.Num());
   for (AActor* Actor : Candidates)
   {
     ATrafficSignBase* Sign = Cast<ATrafficSignBase>(Actor);
-    if (!Sign)
+    if (Sign && Sign->bGeneratedFromOpenDRIVE)
     {
-      continue;
+      GeneratedSigns.Add(Sign);
     }
+  }
+
+  const TArray<UPrimitiveComponent*> NoIgnoredComponents;
+  bool bAnyAdjusted = false;
+  int32 GroundNotFoundCount = 0;
+  for (AActor* Actor : GeneratedSigns)
+  {
+    ATrafficSignBase* Sign = CastChecked<ATrafficSignBase>(Actor);
     if (TrafficSignHeightUtils::AdjustSignToGround(
-            World, Sign, NoIgnoredActors, NoIgnoredComponents))
+            World, Sign, GeneratedSigns, NoIgnoredComponents))
     {
       bAnyAdjusted = true;
     }

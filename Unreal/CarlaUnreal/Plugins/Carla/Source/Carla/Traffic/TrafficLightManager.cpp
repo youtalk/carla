@@ -277,16 +277,39 @@ void ATrafficLightManager::GenerateSignalsAndTrafficLights()
 
     SpawnSignals();
 
+    // Tag every generated sign/light so height adjustment (here and in the
+    // large-map manager) only ever moves OpenDRIVE-generated actors, never
+    // signs placed by hand in the level.
+    for (ATrafficSignBase* Sign : TrafficSigns)
+    {
+      if (IsValid(Sign))
+      {
+        Sign->bGeneratedFromOpenDRIVE = true;
+      }
+    }
+
     if (bAdjustSignsHeightToGround)
     {
       UWorld* World = GetWorld();
-      const TArray<AActor*> NoIgnoredActors;
+      // Ignore the whole generated set during the downward trace. Otherwise the
+      // ray hits the sign's own collision (or a neighbour still at its nominal
+      // height) instead of the ground, which lifts every actor by roughly its
+      // own base height and leaves the poles floating (see PR #9773).
+      TArray<AActor*> IgnoredActors;
+      IgnoredActors.Reserve(TrafficSigns.Num());
+      for (ATrafficSignBase* Sign : TrafficSigns)
+      {
+        if (IsValid(Sign))
+        {
+          IgnoredActors.Add(Sign);
+        }
+      }
       const TArray<UPrimitiveComponent*> NoIgnoredComponents;
       int32 GroundNotFoundCount = 0;
       for (ATrafficSignBase* Sign : TrafficSigns)
       {
         if (!TrafficSignHeightUtils::AdjustSignToGround(
-                World, Sign, NoIgnoredActors, NoIgnoredComponents)
+                World, Sign, IgnoredActors, NoIgnoredComponents)
             && IsValid(Sign) && !Sign->bPositioned)
         {
           ++GroundNotFoundCount;
