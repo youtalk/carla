@@ -63,6 +63,21 @@ ADD_PP             add an unbound histogram PostProcessVolume (default 0; viewpo
 PP_BIAS            AutoExposureBias for that PostProcessVolume (default 1.2)
 ```
 
+`ADD_PP=1` is a no-op when the map already has a `PostProcessVolume`; that case
+is logged (`PostProcessVolume already present; not adding another`) rather than
+silently ignored. A malformed numeric env value (e.g. `SKYLIGHT_INTENSITY=1,0`)
+is logged and falls back to the default instead of crashing the run.
+
+### Failure reporting
+
+`apply-native` always saves (so a partial result is inspectable), but it makes
+incompleteness loud: any write that fails or silently no-ops (writes are
+verified by read-back), a requested step whose target actor is missing (e.g. no
+`SkyLight` while `SKYLIGHT_CAPTURED=1` — it may be stranded in an unloaded
+streamed sub-level), or a malformed numeric env value all count toward a final
+`WARNING: authoring incomplete -- N write(s) failed` line. Treat that WARNING as
+"re-check before trusting the map", even though `saved ...` also printed.
+
 ## Invocation
 
 Both modes run through the `-run=pythonscript` commandlet. The commandlet's

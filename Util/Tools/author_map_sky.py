@@ -41,6 +41,7 @@ Runner note:
   "saved ..." log line and the post-save list-native check, not the exit code.
 """
 
+import math
 import os
 
 import unreal
@@ -71,24 +72,62 @@ def _try(getter, default=None):
         return default
 
 
-# Module-level tally of authoring WRITES that failed. mode_apply_native flags a
-# prominent WARNING (and still saves, so the partial state is inspectable) when
-# non-zero, so a failed write can never hide behind the "saved" log line.
+# Module-level tally of authoring problems (failed writes AND requested steps
+# that could not run). mode_apply_native flags a prominent WARNING (and still
+# saves, so the partial state is inspectable) when non-zero, so an incomplete
+# authoring can never hide behind the "saved" log line.
 _write_failures = 0
+
+
+def _authoring_error(msg):
+    """A requested authoring step could not run (e.g. its target actor is
+    absent -- possibly stranded in an unloaded streamed sub-level -- or a config
+    value was malformed). Count it like a failed write and log it loudly so the
+    run reports 'authoring incomplete' instead of a silent skip."""
+    global _write_failures
+    _write_failures += 1
+    log(f"  write failed: {msg}")
+
+
+def _values_match(got, want):
+    """Tolerant equality for a write read-back: float values compare with a
+    small tolerance, everything else (bool/enum/int/str) by ==."""
+    if isinstance(got, float) or isinstance(want, float):
+        try:
+            return math.isclose(float(got), float(want), rel_tol=1e-6, abs_tol=1e-6)
+        except (TypeError, ValueError):
+            return got == want
+    return got == want
 
 
 def _set(obj, prop, value):
     """Authoring WRITE. Unlike _try, a failure is loud: it logs 'write failed'
     (not 'read miss') and records a module-level failure so incomplete authoring
-    is reported instead of silently succeeding."""
+    is reported instead of silently succeeding.
+
+    UE's set_editor_property can log-and-continue (returning without raising) on
+    a rejected/read-only property, so an exception alone is not proof the write
+    took. For scalar/enum/bool writes we read the property back and count a
+    silent no-op as a failure too. Struct values (e.g. PostProcessSettings) do
+    not compare reliably, so verification is skipped for them."""
     global _write_failures
     try:
         obj.set_editor_property(prop, value)
-        return True
     except Exception as e:
         _write_failures += 1
         log(f"  write failed: {prop}: {e}")
         return False
+    if not isinstance(value, unreal.StructBase):
+        try:
+            got = obj.get_editor_property(prop)
+        except Exception as e:
+            log(f"  (write verify skipped for {prop}: {e})")
+            return True
+        if not _values_match(got, value):
+            _write_failures += 1
+            log(f"  write failed (no-op): {prop}: set {value!r} but read back {got!r}")
+            return False
+    return True
 
 
 def _call(obj, method):
@@ -130,8 +169,32 @@ def _call(obj, method):
 
 
 def _envf(name, default):
+    """Parse a float env var. A malformed value is loud (logged + counted as an
+    authoring failure) and falls back to the default, rather than raising and
+    crashing the run mid-authoring (discarding edits already applied but not yet
+    saved)."""
     v = os.environ.get(name)
-    return float(v) if v not in (None, "") else default
+    if v in (None, ""):
+        return default
+    try:
+        return float(v)
+    except ValueError:
+        _authoring_error(f"invalid {name}={v!r}; using default {default}")
+        return default
+
+
+def _env_opt_f(name):
+    """Optional float env var: None when unset (leave the property as-is). A
+    malformed value is loud (logged + counted) and treated as unset instead of
+    crashing the run."""
+    v = os.environ.get(name)
+    if v in (None, ""):
+        return None
+    try:
+        return float(v)
+    except ValueError:
+        _authoring_error(f"invalid {name}={v!r}; leaving property unchanged")
+        return None
 
 
 def _envb(name, default):
@@ -172,6 +235,23 @@ def _log_skylight(sl):
         f"mobility={_try(lambda: c.get_editor_property('mobility'))}")
 
 
+def _log_atmosphere(atm):
+    c = _component_by_class(atm, unreal.SkyAtmosphereComponent)
+    log(f"  SkyAtmosphere '{atm.get_actor_label()}': "
+        f"component={'present' if c is not None else 'MISSING'}")
+
+
+def _log_postprocess(ppv):
+    s = _try(lambda: ppv.get_editor_property("settings"))
+    log(f"  PostProcessVolume '{ppv.get_actor_label()}': "
+        f"unbound={_try(lambda: ppv.get_editor_property('unbound'))} "
+        f"priority={_try(lambda: ppv.get_editor_property('priority'))} "
+        f"auto_exposure_method="
+        f"{_try(lambda: s.get_editor_property('auto_exposure_method')) if s else '?'} "
+        f"auto_exposure_bias="
+        f"{_try(lambda: s.get_editor_property('auto_exposure_bias')) if s else '?'}")
+
+
 def _map_prefix(target):
     """Actor-label prefix derived from the target map's leaf name so a general
     map does not get misleading Town04_-prefixed actors. e.g.
@@ -182,23 +262,37 @@ def _map_prefix(target):
     return leaf or "Map"
 
 
+# A single OpenDriveToMap instance is reused for every spawn (see _get_spawner).
+_spawner = None
+
+
+def _get_spawner():
+    """Lazily construct and cache the OpenDriveToMap spawner used by
+    _spawn_native.
+
+    DELIBERATE workaround, not a gratuitous CarlaTools dependency:
+    EditorActorSubsystem.spawn_actor_from_class() SIGSEGVs in the headless
+    -run=pythonscript commandlet (placement-subsystem null deref at 0x38) --
+    empirically verified for the NATIVE classes this tool spawns (SkyAtmosphere,
+    PostProcessVolume), not only for Blueprint classes.
+    OpenDriveToMap.spawn_actor_in_editor_world() spawns into the editor world
+    without touching the placement subsystem, so it is the only spawn path that
+    survives the commandlet."""
+    global _spawner
+    if _spawner is None:
+        if not hasattr(unreal, "OpenDriveToMap"):
+            raise RuntimeError(
+                "apply-native: unreal.OpenDriveToMap is unavailable -- the "
+                "CarlaTools plugin and its Python bindings must be enabled. It "
+                "is required because EditorActorSubsystem.spawn_actor_from_class()"
+                " SIGSEGVs in the headless commandlet; OpenDriveToMap is the "
+                "working spawn path.")
+        _spawner = unreal.OpenDriveToMap()
+    return _spawner
+
+
 def _spawn_native(actor_class, label):
-    # DELIBERATE workaround, not a gratuitous CarlaTools dependency:
-    # EditorActorSubsystem.spawn_actor_from_class() SIGSEGVs in the headless
-    # -run=pythonscript commandlet (placement-subsystem null deref at 0x38) --
-    # empirically verified for the NATIVE classes this tool spawns
-    # (SkyAtmosphere, PostProcessVolume), not only for Blueprint classes.
-    # OpenDriveToMap.spawn_actor_in_editor_world() spawns into the editor world
-    # without touching the placement subsystem, so it is the only spawn path
-    # that survives the commandlet.
-    if not hasattr(unreal, "OpenDriveToMap"):
-        raise RuntimeError(
-            "apply-native: unreal.OpenDriveToMap is unavailable -- the CarlaTools "
-            "plugin and its Python bindings must be enabled. It is required "
-            "because EditorActorSubsystem.spawn_actor_from_class() SIGSEGVs in "
-            "the headless commandlet; OpenDriveToMap is the working spawn path.")
-    spawner = unreal.OpenDriveToMap()
-    actor = spawner.spawn_actor_in_editor_world(
+    actor = _get_spawner().spawn_actor_in_editor_world(
         actor_class, unreal.Vector(0.0, 0.0, 0.0), unreal.Rotator(0.0, 0.0, 0.0))
     if actor is None:
         raise RuntimeError(f"apply-native: spawn of {label} returned None")
@@ -243,6 +337,10 @@ def mode_list_native():
         _log_directional(dl)
     for sl in sls:
         _log_skylight(sl)
+    for a in atm:
+        _log_atmosphere(a)
+    for p in ppv:
+        _log_postprocess(p)
 
 
 def mode_apply_native():
@@ -260,24 +358,31 @@ def mode_apply_native():
     for sl in sls:
         _log_skylight(sl)
 
-    # A differently-shaped map may lack the native lights this tool tunes; warn
-    # loudly rather than silently partial-authoring.
+    # A differently-shaped map may lack the native lights this tool tunes -- and
+    # note the SkyLight in particular lives in a streamed sub-level, so an empty
+    # result can mean "stranded in an unloaded sub-level" rather than "absent".
+    # Either way, when the step that needs the actor was actually requested,
+    # count it as an authoring failure so the run reports incompleteness instead
+    # of silently no-op'ing (a bare WARNING is easy to miss in the log).
     if not dls:
-        log("WARNING: no DirectionalLight found on target map")
-    if not sls:
-        log("WARNING: no SkyLight found on target map")
+        _authoring_error("no DirectionalLight found on target map "
+                         "(nothing to drive the atmosphere sun)")
+    if not sls and _envb("SKYLIGHT_CAPTURED", True):
+        _authoring_error("no SkyLight found on target map "
+                         "(SKYLIGHT_CAPTURED requested but cannot run -- it may "
+                         "be in an unloaded streamed sub-level)")
 
     # 1. Native DirectionalLight = the runtime sun. Keep it; ensure it drives the
     # atmosphere. Optional intensity tune (SUN_INTENSITY) once atmosphere+ambient
     # are in and the ground is still over/under-lit.
-    sun_intensity = os.environ.get("SUN_INTENSITY")
+    sun_intensity = _env_opt_f("SUN_INTENSITY")
     for dl in dls:
         c = _component_by_class(dl, unreal.DirectionalLightComponent)
         if c is None:
             continue
         _set(c, "atmosphere_sun_light", True)
-        if sun_intensity not in (None, ""):
-            _set(c, "intensity", float(sun_intensity))
+        if sun_intensity is not None:
+            _set(c, "intensity", sun_intensity)
             log(f"  set DirectionalLight intensity -> {sun_intensity}")
 
     # 2. SkyAtmosphere (the dominant missing piece) — defaults give an Earth-like
@@ -306,8 +411,11 @@ def mode_apply_native():
             log(f"  SkyLight -> captured-scene real-time, intensity={sky_intensity}")
 
     # 4. Optional histogram PostProcessVolume (viewport only; not sensors).
-    if _envb("ADD_PP", False) and not _actors_by_class("PostProcessVolume"):
-        _add_histogram_pp(_envf("PP_BIAS", 1.2), prefix)
+    if _envb("ADD_PP", False):
+        if _actors_by_class("PostProcessVolume"):
+            log("PostProcessVolume already present; not adding another")
+        else:
+            _add_histogram_pp(_envf("PP_BIAS", 1.2), prefix)
 
     # Report final state before save.
     log("native after:")
