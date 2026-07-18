@@ -6,6 +6,7 @@
 
 #include "TrafficLightManager.h"
 #include "Game/CarlaStatics.h"
+#include "Game/CarlaGameModeBase.h"
 #include "StopSignComponent.h"
 #include "YieldSignComponent.h"
 #include "SpeedLimitComponent.h"
@@ -290,40 +291,67 @@ void ATrafficLightManager::GenerateSignalsAndTrafficLights()
 
     if (bAdjustSignsHeightToGround)
     {
-      UWorld* World = GetWorld();
-      // Ignore the whole generated set during the downward trace. Otherwise the
-      // ray hits the sign's own collision (or a neighbour still at its nominal
-      // height) instead of the ground, which lifts every actor by roughly its
-      // own base height and leaves the poles floating (see PR #9773).
-      TArray<AActor*> IgnoredActors;
-      IgnoredActors.Reserve(TrafficSigns.Num());
-      for (ATrafficSignBase* Sign : TrafficSigns)
-      {
-        if (IsValid(Sign))
-        {
-          IgnoredActors.Add(Sign);
-        }
-      }
-      const TArray<UPrimitiveComponent*> NoIgnoredComponents;
-      int32 GroundNotFoundCount = 0;
-      for (ATrafficSignBase* Sign : TrafficSigns)
-      {
-        if (!TrafficSignHeightUtils::AdjustSignToGround(
-                World, Sign, IgnoredActors, NoIgnoredComponents)
-            && IsValid(Sign) && !Sign->bPositioned)
-        {
-          ++GroundNotFoundCount;
-        }
-      }
-      if (GroundNotFoundCount > 0)
-      {
-        UE_LOG(LogCarla, Warning,
-            TEXT("Could not find ground for %d traffic sign(s)"),
-            GroundNotFoundCount);
-      }
+      AdjustSpawnedSignsHeight();
     }
 
     TrafficLightsGenerated = true;
+  }
+}
+
+bool ATrafficLightManager::AdjustSpawnedSignsHeight()
+{
+  UWorld* World = GetWorld();
+  // Ignore the whole generated set during the downward trace. Otherwise the
+  // ray hits the sign's own collision (or a neighbour still at its nominal
+  // height) instead of the ground, which lifts every actor by roughly its
+  // own base height and leaves the poles floating (see PR #9773).
+  TArray<AActor*> IgnoredActors;
+  IgnoredActors.Reserve(TrafficSigns.Num());
+  for (ATrafficSignBase* Sign : TrafficSigns)
+  {
+    if (IsValid(Sign))
+    {
+      IgnoredActors.Add(Sign);
+    }
+  }
+  const TArray<UPrimitiveComponent*> NoIgnoredComponents;
+  bool bAnyAdjusted = false;
+  int32 GroundNotFoundCount = 0;
+  for (ATrafficSignBase* Sign : TrafficSigns)
+  {
+    if (TrafficSignHeightUtils::AdjustSignToGround(
+            World, Sign, IgnoredActors, NoIgnoredComponents))
+    {
+      bAnyAdjusted = true;
+    }
+    else if (IsValid(Sign) && !Sign->bPositioned)
+    {
+      ++GroundNotFoundCount;
+    }
+  }
+  if (GroundNotFoundCount > 0)
+  {
+    UE_LOG(LogCarla, Warning,
+        TEXT("Could not find ground for %d traffic sign(s)"),
+        GroundNotFoundCount);
+  }
+  return bAnyAdjusted;
+}
+
+void ATrafficLightManager::SetAdjustSignsHeightToGround(bool bEnabled)
+{
+  bAdjustSignsHeightToGround = bEnabled;
+
+  // Signs are generated at map load, before a client can apply world settings,
+  // so honour a late enable by re-snapping the already-spawned signs.
+  // AdjustSpawnedSignsHeight is idempotent (the bPositioned flag guards each
+  // sign), so re-applying the setting is safe.
+  if (bEnabled && TrafficLightsGenerated && AdjustSpawnedSignsHeight())
+  {
+    if (ACarlaGameModeBase* GameMode = UCarlaStatics::GetGameMode(GetWorld()))
+    {
+      GameMode->RegisterEnvironmentObjects();
+    }
   }
 }
 
