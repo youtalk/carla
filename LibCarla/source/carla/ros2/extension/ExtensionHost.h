@@ -9,9 +9,10 @@
 // never links a DDS vendor), so it may only depend on the pure-C ABI header
 // CarlaRos2Extension.h and ROS2.h. The CycloneDDS-backed blob endpoints
 // (create_publisher / publish / create_subscriber) are wired into the host
-// vtable from a SEPARATE translation unit that DOES link DDS (Ros2Native,
-// Task 13) — keeping them out of this TU preserves the Phase A split whereby
-// carla-server never odr-uses a DDS entity.
+// vtable from a SEPARATE translation unit that DOES link DDS (built into
+// carla-ros2-native, see ExtensionBlobEndpoints.cpp) — keeping them out of
+// this TU preserves the invariant that carla-server never odr-uses a DDS
+// entity.
 
 #pragma once
 
@@ -25,7 +26,8 @@ namespace ros2 {
 // apply_ackermann_control slots route back through it (apply_ackermann_control
 // forwards to ROS2::ApplyExtensionAckermann, which stages the command for the
 // game-thread SetFrame drain). The create_publisher / publish / create_subscriber
-// slots forward to the CycloneDDS-linked blob endpoints (Task 13).
+// slots forward to the CycloneDDS-linked blob endpoints (defined in
+// ExtensionBlobEndpoints.cpp, built into carla-ros2-native).
 CarlaRos2Host MakeExtensionHost();
 
 // Reclaims host-owned state the extension registered through the vtable, called

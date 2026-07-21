@@ -123,8 +123,8 @@ CarlaRos2PubHandle BlobCreatePublisher(const char* topic, const char* type_name,
     return 0u;
   }
   // type_hash (RIHS01 form) is accepted but deliberately NOT placed on the wire:
-  // ROS 2 Humble has no RIHS type-hash discovery machinery (see the G0 report),
-  // so endpoint matching is by topic name + type name + QoS. Recording it in
+  // ROS 2 Humble ships no RIHS01 type-hash discovery machinery, so endpoint
+  // matching is by topic name + type name + QoS. Recording it in
   // USER_DATA would be inert for Humble interop and is omitted for v1.
   const std::string dds_topic = BlobDdsTopicName(topic);
   dds_entity_t p = carla_cdr_get_participant();

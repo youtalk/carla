@@ -29,16 +29,17 @@
 // carla-ros2-native), yet the vtable slots are function pointers resolved at
 // link time against the CycloneDDS-linked .so — so calling h.publish() here
 // runs the REAL BlobPublish out of libcarla-ros2-native.so. That is exactly the
-// two-build seam this task builds (carla-server references BlobCreate*/
-// BlobPublish/BlobTeardownAll through the DDS-free ExtensionBlobEndpoints.h
-// forward declarations; the definitions live in the DDS-linked TU), so these
+// two-build seam (carla-server references BlobCreate*/BlobPublish/
+// BlobTeardownAll through the DDS-free ExtensionBlobEndpoints.h forward
+// declarations; the definitions live in the DDS-linked TU), so these
 // tests prove the seam links end-to-end without needing a live participant.
 // --------------------------------------------------------------------------
 
 TEST(ros2_extension_blob, vtable_slots_are_wired) {
   CarlaRos2Host h = carla::ros2::MakeExtensionHost();
-  // Before Task 13 these three slots are null (Task 12 left them so); wiring
-  // them is the RED->GREEN of this task.
+  // MakeExtensionHost() must wire all three of these slots to the DDS-linked
+  // blob endpoints; a regression back to null would silently break the
+  // publish/subscribe seam.
   EXPECT_NE(h.create_publisher, nullptr);
   EXPECT_NE(h.publish, nullptr);
   EXPECT_NE(h.create_subscriber, nullptr);
@@ -62,9 +63,9 @@ TEST(ros2_extension_blob, publish_with_unknown_handle_returns_error) {
 // Compiled in only when the translation unit sees CARLA_ROS2_MIDDLEWARE_CYCLONEDDS
 // (i.e. a CycloneDDS-macro'd test build). The standard gate build does NOT
 // define that macro, so this test elides here and contributes zero tests — the
-// binding round-trip proof for this task is the live pub/sub check against the
-// Autoware container (see task-13-report.md), not an in-process DDS loopback in
-// the unit gate. The body is kept faithful so it runs under a CycloneDDS build.
+// binding round-trip proof is a live pub/sub check against a real Autoware
+// container, not an in-process DDS loopback in the unit gate. The body is kept
+// faithful so it runs under a CycloneDDS build.
 // --------------------------------------------------------------------------
 #if defined(CARLA_ROS2_MIDDLEWARE_CYCLONEDDS)
 namespace {

@@ -4,7 +4,9 @@
 // Narrow C ABI seam between CARLA core and an out-of-tree ROS 2 extension .so.
 // DDS-FREE BY CONTRACT: this header is compiled into BOTH carla-server (no DDS
 // vendor macros) and the out-of-tree extension. It must not include any DDS
-// header nor odr-use PublisherImpl<>::Init (Phase A header-inline-ctor trap).
+// header nor odr-use PublisherImpl<>::Init (a header-inline DDS-entity
+// constructor; odr-using it would silently pull DDS-vendor code into, and
+// thus force a DDS-vendor link onto, whichever TU calls it).
 // No C++ types cross the boundary: only PODs and function pointers.
 // SAME-ARCH-ONLY CONTRACT: the seam is a same-process dlopen of a .so built
 // against the same compiler/ABI as the host, not a network or cross-arch
@@ -61,9 +63,11 @@ typedef struct {
   double   velocity_mps;            // longitudinal, body frame
   double   lateral_velocity_mps;
   double   yaw_rate_rps;
-  double   steering_tire_angle_rad; // positive = left (Autoware convention applied by ext)
+  double   steering_tire_angle_rad; // positive = left (Autoware convention, already
+                                     // applied by the host — do NOT negate again)
   int32_t  gear;                    // CARLA gear
-  double   sim_time_s;
+  double   sim_time_s;               // ROS2 sim clock; a DIFFERENT clock basis from
+                                      // on_tick's UE world clock below
 } CarlaRos2VehicleStatusView;
 
 // Raw LiDAR/IMU/GNSS observers deliver a type-erased buffer + kind; v1 extension
@@ -109,6 +113,9 @@ typedef struct CarlaRos2Host {
   uint32_t api_version;
   void*    host_ctx;
 
+  // Registration is NOT thread-safe against dispatch: only call this from
+  // carla_ros2_extension_init or the game thread, never concurrently with an
+  // in-flight sensor dispatch.
   void (*register_sensor_observer)(void* host_ctx, int kind,
                                    CarlaRos2SensorObserver cb, void* user);
 
@@ -133,10 +140,15 @@ typedef struct CarlaRos2Host {
                                           const CarlaRos2Qos* qos,
                                           CarlaRos2SubCallback cb, void* user);
 
+  // Fire-and-forget, like the native ROS 2 vehicle-control subscriber: an
+  // unknown or stale actor_id (already unregistered, or never the ego) is
+  // silently dropped, not reported back to the extension.
   void (*apply_ackermann_control)(void* host_ctx, uint32_t actor_id,
                                   const CarlaRos2AckermannPod* pod);
 
-  uint32_t (*get_ego_actor_id)(void* host_ctx);            // 0 if none registered
+  // 0 if none registered. A reloaded episode invalidates any actor id the
+  // extension cached — re-query this rather than reusing an old one.
+  uint32_t (*get_ego_actor_id)(void* host_ctx);
   const char* (*get_actor_ros_name)(void* host_ctx, uint32_t actor_id);
 } CarlaRos2Host;
 
@@ -144,6 +156,9 @@ typedef struct CarlaRos2Host {
 typedef struct CarlaRos2Extension {
   uint32_t api_version;
   void*    ext_ctx;
+  // sim_time_s here is the UE world clock — a DIFFERENT clock basis from
+  // CarlaRos2VehicleStatusView::sim_time_s (the ROS2 sim clock) — and it
+  // resets on episode reload.
   void (*on_tick)(void* ext_ctx, double sim_time_s);
   void (*on_shutdown)(void* ext_ctx);
 } CarlaRos2Extension;

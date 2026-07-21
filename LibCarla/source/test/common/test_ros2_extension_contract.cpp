@@ -66,8 +66,9 @@ TEST(ros2_extension_contract, load_handshake_and_observer_and_control) {
 // the host-side refusal (aborting the load when ext.api_version != host's)
 // lives in the UE-side CarlaRos2ExtensionLoader::Load(), which this LibCarla
 // test binary cannot link (see this file's banner comment) — that refusal
-// was live-proven in Task 11. This test only proves the mock can signal a
-// mismatch across the ABI for the loader to act on.
+// is exercised only by a live UE run, not by this suite. This test only
+// proves the mock can signal a mismatch across the ABI for the loader to
+// act on.
 TEST(ros2_extension_contract, mock_reports_version_mismatch_for_loader_refusal) {
   setenv("MOCK_FORCE_BAD_VERSION", "1", 1);
   void* so = dlopen(CARLA_ROS2_MOCK_EXTENSION_SO, RTLD_NOW | RTLD_LOCAL);
@@ -76,7 +77,8 @@ TEST(ros2_extension_contract, mock_reports_version_mismatch_for_loader_refusal) 
   CarlaRos2Host host = carla::ros2::MakeExtensionHost();
   CarlaRos2Extension ext = {};
   ASSERT_EQ(init(&host, &ext), 0);
-  // The host-side loader (Task 11) rejects this because ext.api_version != host.
+  // The host-side loader (CarlaRos2ExtensionLoader::Load(), UE-side, not
+  // linked into this binary) rejects this because ext.api_version != host.
   EXPECT_NE(ext.api_version, CARLA_ROS2_EXTENSION_API_VERSION);
   unsetenv("MOCK_FORCE_BAD_VERSION");
   dlclose(so);

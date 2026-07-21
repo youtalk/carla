@@ -71,8 +71,9 @@ TEST(ros2_extension_host, vehicle_status_observer_is_called) {
 
   // Teardown must drop the extension-registered observer so a stale function
   // pointer into a soon-to-be-dlclose'd .so can never be dispatched into again
-  // (the only lever Task 12's TeardownExtensionEndpoints owns; DDS endpoints
-  // arrive in Task 13). After teardown, a second dispatch reaches nobody.
+  // (the only registry TeardownExtensionEndpoints clears directly here; DDS
+  // endpoint teardown is a separate concern handled by BlobTeardownAll).
+  // After teardown, a second dispatch reaches nobody.
   carla::ros2::TeardownExtensionEndpoints();
   g_calls = 0;
   carla::ros2::ROS2::GetInstance()->DispatchVehicleStatusObserversForTest(

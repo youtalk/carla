@@ -127,7 +127,7 @@ if (BUILD_CARLA_SERVER)
     # so it belongs in carla-server; add it explicitly or MakeExtensionHost() /
     # TeardownExtensionEndpoints() are undefined symbols at link time. The
     # CycloneDDS-linked blob endpoints are a SEPARATE TU that goes into
-    # Ros2Native (Task 13), NOT here.
+    # Ros2Native, NOT here.
     list (
       APPEND
       LIBCARLA_SERVER_SOURCES
@@ -561,8 +561,8 @@ if (BUILD_LIBCARLA_TESTS)
       add_dependencies (libcarla_test_server fastdds)
       add_dependencies (libcarla_test_server carla-ros2-native)
 
-      # In-tree mock extension .so for test_ros2_extension_contract.cpp
-      # (Task 15). Deliberately a plain add_library(... SHARED ...), NOT
+      # In-tree mock extension .so for test_ros2_extension_contract.cpp.
+      # Deliberately a plain add_library(... SHARED ...), NOT
       # carla_add_library: this project builds with BUILD_SHARED_LIBS=OFF, so
       # carla_add_library's bare add_library(${NAME} ${ARGN}) would produce a
       # static archive instead of a real .so the test can dlopen. The mock

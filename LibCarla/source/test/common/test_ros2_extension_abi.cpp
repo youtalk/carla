@@ -18,7 +18,7 @@
 // Frozen v1 ABI layout pins (compile-time). These static_asserts lock the
 // exact sizeof/offsetof of every struct that crosses the CarlaRos2Extension.h
 // boundary, computed from the current (correct) layout. This header is
-// vendored VERBATIM into the out-of-tree extension repo (Task 16) and the
+// vendored VERBATIM into the out-of-tree extension's own source tree, and the
 // host/extension handshake is a single api_version integer with NO per-field
 // forward-compat padding (see the header's own note) — so a field reorder,
 // widen, or insert in ANY of these structs is an ABI break that MUST bump

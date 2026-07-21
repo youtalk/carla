@@ -13,10 +13,11 @@
 //     defines them.
 // It must therefore stay DDS-free: it depends only on the pure-C ABI header
 // CarlaRos2Extension.h. Keeping the definitions in the DDS-linked TU (globbed
-// into carla-ros2-native, NOT carla-server) preserves the Phase A split whereby
-// carla-server never odr-uses a DDS entity (the 288bc9b1c header-inline-ctor
-// trap): carla-server references these symbols only through the declarations
-// below, and the linker resolves them against libcarla-ros2-native.so.
+// into carla-ros2-native, NOT carla-server) preserves the split whereby
+// carla-server never odr-uses a DDS entity (see CarlaRos2Extension.h's note
+// on the header-inline-ctor trap this split avoids): carla-server references
+// these symbols only through the declarations below, and the linker resolves
+// them against libcarla-ros2-native.so.
 
 #pragma once
 
