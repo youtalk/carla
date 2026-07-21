@@ -523,6 +523,9 @@ std::shared_ptr<BasePublisher> ROS2::GetOrCreateSemanticLidarSensorForTest(
 }
 
 std::shared_ptr<CarlaTransformPublisher> ROS2::GetOrCreateTransformPublisher(void *actor) {
+  if (!_publish_tf_global) {
+    return nullptr;                       // global suppression: Autoware owns TF
+  }
   auto it = _transforms.find(actor);
   if (it != _transforms.end()) {
     return it->second;

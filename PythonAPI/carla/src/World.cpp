@@ -335,6 +335,7 @@ void export_world() {
     .def("get_traffic_lights_in_junction", CALL_RETURNING_LIST_1(cc::World, GetTrafficLightsInJunction, carla::road::JuncId), (arg("junction_id")))
     .def("reset_all_traffic_lights", &cc::World::ResetAllTrafficLights)
     .def("freeze_all_traffic_lights", &cc::World::FreezeAllTrafficLights, (arg("frozen")))
+    .def("set_publish_tf", &cc::World::SetPublishTF, (arg("enabled")))
     .def("get_level_bbs", &GetLevelBBs, (arg("bb_type")=cr::CityObjectLabel::Any))
     .def("get_environment_objects", &GetEnvironmentObjects, (arg("object_type")=cr::CityObjectLabel::Any))
     .def("enable_environment_objects", &EnableEnvironmentObjects, (arg("env_objects_ids"), arg("enable")))

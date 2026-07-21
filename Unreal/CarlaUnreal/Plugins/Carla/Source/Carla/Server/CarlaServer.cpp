@@ -2591,6 +2591,18 @@ BIND_SYNC(is_sensor_enabled_for_ros) << [this](carla::streaming::detail::stream_
     return R<void>::Success();
   };
 
+  BIND_SYNC(set_publish_tf) << [this]
+      (bool enabled) -> R<void>
+  {
+    REQUIRE_CARLA_EPISODE();
+    #if defined(WITH_ROS2)
+    carla::ros2::ROS2::GetInstance()->SetPublishTF(enabled);
+    #else
+    (void)enabled;
+    #endif
+    return R<void>::Success();
+  };
+
   BIND_SYNC(get_vehicle_light_states) << [this]() -> R<cr::VehicleLightStateList>
   {
     REQUIRE_CARLA_EPISODE();
