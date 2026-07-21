@@ -560,6 +560,36 @@ if (BUILD_LIBCARLA_TESTS)
       )
       add_dependencies (libcarla_test_server fastdds)
       add_dependencies (libcarla_test_server carla-ros2-native)
+
+      # In-tree mock extension .so for test_ros2_extension_contract.cpp
+      # (Task 15). Deliberately a plain add_library(... SHARED ...), NOT
+      # carla_add_library: this project builds with BUILD_SHARED_LIBS=OFF, so
+      # carla_add_library's bare add_library(${NAME} ${ARGN}) would produce a
+      # static archive instead of a real .so the test can dlopen. The mock
+      # compiles against ONLY the pure-C ABI header (CarlaRos2Extension.h),
+      # same two-build-split contract as the real out-of-tree extension, so it
+      # needs no link libraries of its own.
+      add_library (
+        carla_ros2_mock_extension SHARED
+        ${LIBCARLA_SOURCE_PATH}/test/ros2_mock_extension/mock_extension.cpp
+      )
+      target_include_directories (
+        carla_ros2_mock_extension PRIVATE
+        ${LIBCARLA_SOURCE_PATH}
+      )
+      set_target_properties (
+        carla_ros2_mock_extension PROPERTIES
+        LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/test
+      )
+      # The test dlopen's this path directly (no hardcoded absolute path in
+      # the test source): CMAKE_BINARY_DIR is stable across the gate's build
+      # tree, so the compile definition resolves correctly wherever the gate
+      # configures the build.
+      target_compile_definitions (
+        libcarla_test_server PRIVATE
+        CARLA_ROS2_MOCK_EXTENSION_SO="${CMAKE_BINARY_DIR}/test/libcarla_ros2_mock_extension.so"
+      )
+      add_dependencies (libcarla_test_server carla_ros2_mock_extension)
     endif ()
 
   endif ()

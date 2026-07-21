@@ -279,6 +279,18 @@ void ROS2::UnregisterVehicle(void *actor) {
       _id_by_actor.erase(id_it);
     }
   }
+  // Drop any staged-but-undrained extension Ackermann command for this actor
+  // too: ApplyExtensionAckermann can stage into _ext_pending_cmds from the
+  // extension's subscriber-listener thread right up until this despawn, and
+  // without this erase a stale entry would survive keyed on a now-dangling
+  // actor pointer, then get applied against whatever unrelated actor is
+  // allocated at that same address later (or found and visited via a stale
+  // _actor_callbacks-adjacent lookup). Locked against the same producer/
+  // consumer race DrainExtensionPendingCommands guards against.
+  {
+    std::lock_guard<std::mutex> lock(_ext_pending_cmds_mutex);
+    _ext_pending_cmds.erase(actor);
+  }
   UnregisterSensor(actor);
 }
 
