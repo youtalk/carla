@@ -122,6 +122,17 @@ if (BUILD_CARLA_SERVER)
       LIBCARLA_SERVER_SOURCES
       ${LIBCARLA_SERVER_SOURCES_ROS2}
     )
+    # The ros2/*.cpp glob above is NON-recursive, so carla/ros2/extension/ is not
+    # reached. ExtensionHost.cpp is DDS-free (only CarlaRos2Extension.h + ROS2.h)
+    # so it belongs in carla-server; add it explicitly or MakeExtensionHost() /
+    # TeardownExtensionEndpoints() are undefined symbols at link time. The
+    # CycloneDDS-linked blob endpoints are a SEPARATE TU that goes into
+    # Ros2Native (Task 13), NOT here.
+    list (
+      APPEND
+      LIBCARLA_SERVER_SOURCES
+      ${LIBCARLA_SOURCE_PATH}/carla/ros2/extension/ExtensionHost.cpp
+    )
   endif ()
 
   file (
@@ -170,6 +181,15 @@ if (BUILD_CARLA_SERVER)
       APPEND
       LIBCARLA_SERVER_HEADERS
       ${LIBCARLA_SERVER_HEADERS_ROS2}
+    )
+    # Same non-recursive-glob caveat as the sources above: pull in the DDS-free
+    # extension seam headers explicitly (CarlaRos2Extension.h is the frozen ABI,
+    # ExtensionHost.h its host-side declarations).
+    list (
+      APPEND
+      LIBCARLA_SERVER_HEADERS
+      ${LIBCARLA_SOURCE_PATH}/carla/ros2/extension/ExtensionHost.h
+      ${LIBCARLA_SOURCE_PATH}/carla/ros2/extension/CarlaRos2Extension.h
     )
     set (CARLA_ROS2_DEFINITIONS WITH_ROS2)
   endif ()

@@ -16,6 +16,7 @@
 #include "Carla/Settings/EpisodeSettings.h"
 #include "Carla/MapGen/LargeMapManager.h"
 #include "Carla/OpenDrive/OpenDrive.h"
+#include "Carla/Vehicle/CarlaWheeledVehicle.h"
 #include "Carla/Vehicle/VehicleControl.h"
 
 #include <util/disable-ue4-macros.h>
@@ -25,6 +26,7 @@
 #include <carla/multigpu/secondary.h>
 #include <carla/multigpu/secondaryCommands.h>
 #include <carla/ros2/ROS2.h>
+#include <carla/ros2/extension/ExtensionHost.h>
 #include <carla/ros2/middleware/Middleware.h>
 #include <carla/ros2/middleware/MiddlewareConfig.h>
 #include <carla/ros2/middleware/ActiveMiddleware.h>
@@ -41,22 +43,11 @@
 
 #include <thread>
 
-#if defined(WITH_ROS2)
-namespace carla {
-namespace ros2 {
-// Forward declarations for the host-side extension seam: MakeExtensionHost()
-// builds the CarlaRos2Host vtable handed to the extension at Load() time
-// (Task 12); TeardownExtensionEndpoints() reclaims every publisher/subscriber
-// the extension created through that vtable before on_shutdown/dlclose run
-// (Task 13). Neither task has landed yet, so ROS2.cpp carries temporary
-// no-op-safe stub bodies for both until then; declared here (rather than in
-// ROS2.h) because this is the only Task-11 caller and the real declarations
-// belong in the ExtensionHost.h those tasks introduce.
-CarlaRos2Host MakeExtensionHost();
-void TeardownExtensionEndpoints();
-}  // namespace ros2
-}  // namespace carla
-#endif
+// The host-side extension seam (MakeExtensionHost() builds the CarlaRos2Host
+// vtable handed to the extension at Load() time; TeardownExtensionEndpoints()
+// reclaims the host-owned observer registry — and, from Task 13, the DDS
+// reader/writers — before on_shutdown/dlclose run) is declared in
+// <carla/ros2/extension/ExtensionHost.h>, included above.
 
 // =============================================================================
 // -- Static local methods -----------------------------------------------------
@@ -548,13 +539,27 @@ void FCarlaEngine::PublishROS2VehicleState(float DeltaSeconds)
     FVehicleControl VehicleControl;
     View->GetVehicleControl(VehicleControl);
 
+    // Front-wheel road-wheel angle (degrees, CARLA convention) for the
+    // out-of-tree extension's VEHICLE_STATUS tap; ProcessDataFromVehicle
+    // converts it to Autoware-convention radians. NOTE: on this UE5/Chaos build
+    // ACarlaWheeledVehicle::GetWheelSteerAngle is engine-stubbed to 0.0 (the
+    // Chaos readback is #if 0'd, "@CARLAUE5 ToDo"), so this is 0 until that stub
+    // is implemented — the seam is wired for when it is.
+    float FrontWheelSteerAngleDeg = 0.0f;
+    if (ACarlaWheeledVehicle *WheeledVehicle = Cast<ACarlaWheeledVehicle>(Actor))
+    {
+      FrontWheelSteerAngleDeg =
+          WheeledVehicle->GetWheelSteerAngle(EVehicleWheelLocation::FL_Wheel);
+    }
+
     ROS2->ProcessDataFromVehicle(
         static_cast<void*>(Actor),
         Transform,
         carla::geom::Vector3D(Velocity.X, Velocity.Y, Velocity.Z),
         carla::geom::Vector3D(AngularVelocity.X, AngularVelocity.Y, AngularVelocity.Z),
         DeltaSeconds,
-        carla::rpc::VehicleControl(VehicleControl));
+        carla::rpc::VehicleControl(VehicleControl),
+        FrontWheelSteerAngleDeg);
   }
 }
 #endif

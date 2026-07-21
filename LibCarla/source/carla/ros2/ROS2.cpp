@@ -251,6 +251,97 @@ bool ROS2::IsVehicleRegistered(void *actor) const {
   return _vehicle_publishers.find(actor) != _vehicle_publishers.end();
 }
 
+// ---------------------------------------------------------------------------
+// Out-of-tree ROS 2 extension seam (host side). These are the concrete targets
+// the CarlaRos2Host vtable slots (built in ExtensionHost.cpp) route through.
+
+void ROS2::RegisterExtensionObserver(int kind, CarlaRos2SensorObserver cb, void *user) {
+  if (cb == nullptr) {
+    return;  // a null callback would crash the synchronous dispatch loop
+  }
+  // Idempotency: registering the exact same (kind, cb, user) triple twice would
+  // dispatch the sample into that observer twice per frame. Skip the duplicate
+  // and warn — a re-Load of the same extension (or a double register_observer
+  // in on_init) is the likely cause, and silent double-dispatch is a subtle bug.
+  for (const auto &o : _ext_observers) {
+    if (o.kind == kind && o.cb == cb && o.user == user) {
+      log_warning("ROS2: extension observer already registered for kind", kind,
+                  "- ignoring duplicate registration");
+      return;
+    }
+  }
+  _ext_observers.push_back(ExtObserver{kind, cb, user});
+}
+
+void ROS2::ClearExtensionObservers() {
+  _ext_observers.clear();
+}
+
+uint32_t ROS2::GetEgoActorIdForExtension() const {
+  // The hero vehicle is the single RegisterVehicle actor; RegisterVehicle sets
+  // _ego_actor_id in Task 14. Returns 0 ("none registered") until then.
+  return _ego_actor_id;
+}
+
+const char *ROS2::GetActorRosNameForExtension(uint32_t actor_id) const {
+  // thread_local so the returned char* stays valid until this thread's next
+  // call, without the const method mutating shared ROS2 state.
+  static thread_local std::string name;
+  name = LookupRosNameById(actor_id);
+  return name.c_str();
+}
+
+uint32_t ROS2::LookupActorId(void *actor) const {
+  auto it = _id_by_actor.find(actor);
+  return it == _id_by_actor.end() ? 0u : it->second;
+}
+
+std::string ROS2::LookupRosNameById(uint32_t actor_id) const {
+  auto it = _actor_by_id.find(actor_id);
+  return it == _actor_by_id.end() ? std::string{} : LookupRosName(it->second);
+}
+
+void ROS2::DispatchVehicleStatusView(
+    uint32_t actor_id, const char *ros_name, const CarlaRos2Transform &transform,
+    double velocity_mps, double lateral_velocity_mps, double yaw_rate_rps,
+    double steering_tire_angle_rad, int32_t gear, double sim_time_s) {
+  // Single point that fills the VEHICLE_STATUS view + sample and fans it out, so
+  // the live ProcessDataFromVehicle tap and the test driver can never drift. The
+  // view and its ros_name buffer are valid ONLY for this synchronous dispatch
+  // (see the observer contract in CarlaRos2Extension.h).
+  CarlaRos2VehicleStatusView view = {};
+  view.actor_id = actor_id;
+  view.ros_name = ros_name;
+  view.transform = transform;
+  view.velocity_mps = velocity_mps;
+  view.lateral_velocity_mps = lateral_velocity_mps;
+  view.yaw_rate_rps = yaw_rate_rps;
+  view.steering_tire_angle_rad = steering_tire_angle_rad;
+  view.gear = gear;
+  view.sim_time_s = sim_time_s;
+  CarlaRos2SensorSample sample = {};
+  sample.kind = CARLA_ROS2_SENSOR_VEHICLE_STATUS;
+  sample.actor_id = actor_id;
+  sample.ros_name = ros_name;
+  sample.data = &view;
+  sample.data_size = sizeof(view);
+  for (auto &o : _ext_observers) {
+    if (o.kind == CARLA_ROS2_SENSOR_VEHICLE_STATUS) {
+      o.cb(o.user, &sample);
+    }
+  }
+}
+
+void ROS2::DispatchVehicleStatusObserversForTest(
+    uint32_t actor_id, const char *ros_name, double velocity_mps,
+    double steer_rad, int32_t gear, double sim_t) {
+  // Thin wrapper over the shared fill/dispatch helper (zero transform + zero
+  // lateral/yaw, which the live tap computes from real kinematics).
+  DispatchVehicleStatusView(actor_id, ros_name, CarlaRos2Transform{},
+                            velocity_mps, /*lateral_velocity_mps=*/0.0,
+                            /*yaw_rate_rps=*/0.0, steer_rad, gear, sim_t);
+}
+
 void ROS2::AddActorParentRosName(void *actor, void *parent) {
   auto it = _actor_parents.find(actor);
   if (it != _actor_parents.end()) {
@@ -910,7 +1001,8 @@ void ROS2::ProcessDataFromVehicle(
     carla::geom::Vector3D velocity,
     carla::geom::Vector3D angular_velocity,
     float delta_seconds,
-    const carla::rpc::VehicleControl &control) {
+    const carla::rpc::VehicleControl &control,
+    float front_wheel_steer_angle_deg) {
   if (!_enabled) {
     return;
   }
@@ -952,6 +1044,59 @@ void ROS2::ProcessDataFromVehicle(
   it->second.status->Write(
       _seconds, _nanoseconds, "map", orientation, ros_velocity, delta_seconds, ros_control);
   it->second.status->Publish();
+
+  // Out-of-tree extension tap: fan the same per-frame ego state out to any
+  // registered VEHICLE_STATUS observer. Skipped entirely when no extension has
+  // registered, so a non-extension run pays only a vector empty-check.
+  // _ext_rosname_scratch gives ros_name stable char* storage for the duration
+  // of the synchronous dispatch (see the observer contract in
+  // CarlaRos2Extension.h).
+  if (!_ext_observers.empty()) {
+    _ext_rosname_scratch = LookupRosName(actor);
+
+    // CARLA left-handed centimetres + quaternion (per CarlaRos2Transform's
+    // contract): keep location and orientation in the same raw CARLA frame so
+    // the extension applies its own Autoware conversion consistently. The
+    // quaternion is the CARLA-frame Euler->quaternion of vehicle_transform's
+    // rotation (no handedness flip, unlike the ROS odometry quaternion above).
+    CarlaRos2Transform transform = {};
+    transform.x_cm = vehicle_transform.location.x;
+    transform.y_cm = vehicle_transform.location.y;
+    transform.z_cm = vehicle_transform.location.z;
+    const double half_pitch = vehicle_transform.rotation.pitch * carla::geom::Math::Pi<double>() / 360.0;
+    const double half_yaw = vehicle_transform.rotation.yaw * carla::geom::Math::Pi<double>() / 360.0;
+    const double half_roll = vehicle_transform.rotation.roll * carla::geom::Math::Pi<double>() / 360.0;
+    const double cp = std::cos(half_pitch), sp = std::sin(half_pitch);
+    const double cy = std::cos(half_yaw), sy = std::sin(half_yaw);
+    const double cr = std::cos(half_roll), sr = std::sin(half_roll);
+    transform.qw = cr * cp * cy + sr * sp * sy;
+    transform.qx = sr * cp * cy - cr * sp * sy;
+    transform.qy = cr * sp * cy + sr * cp * sy;
+    transform.qz = cr * cp * sy - sr * sp * cy;
+
+    // Steering: front-wheel road-wheel angle from the UE side (CARLA convention
+    // is right-turn-positive on the FL wheel), converted deg->rad and NEGATED so
+    // the view carries the Autoware convention (left-positive) directly — this
+    // matches how the PythonAPI/ros-bridge negates CARLA's FL-wheel angle.
+    // CAVEAT (this build): ACarlaWheeledVehicle::GetWheelSteerAngle is currently
+    // engine-stubbed to return 0.0 on UE5/Chaos (the real readback is #if 0'd,
+    // "@CARLAUE5 ToDo"), so front_wheel_steer_angle_deg is 0 until that stub is
+    // implemented. The seam and sign are wired correctly for when it is; this is
+    // a documented engine limitation, not a silent host-side zero.
+    const double steering_tire_angle_rad =
+        -static_cast<double>(front_wheel_steer_angle_deg) * carla::geom::Math::Pi<double>() / 180.0;
+
+    DispatchVehicleStatusView(
+        LookupActorId(actor),  // 0 until RegisterVehicle records it (Task 14)
+        _ext_rosname_scratch.c_str(),
+        transform,
+        body_velocity.x,           // signed longitudinal body-frame speed (m/s)
+        body_velocity.y,           // lateral body-frame velocity (m/s)
+        ros_angular_velocity.z,    // yaw rate (rad/s)
+        steering_tire_angle_rad,
+        control.gear,
+        static_cast<double>(_seconds) + _nanoseconds * 1e-9);
+  }
 }
 
 void ROS2::ProcessVehicleInfo(
@@ -1044,32 +1189,20 @@ void ROS2::Shutdown() {
   _registrations.clear();
   _actor_parents.clear();
   _clock_publisher.reset();
+  // Extension seam: drop any still-registered observers and the actor-id
+  // bookkeeping. TeardownExtensionEndpoints() already clears the observers
+  // before dlclose on the normal path; this is the belt-and-braces reset for a
+  // Shutdown that is not preceded by a teardown.
+  _ext_observers.clear();
+  _ext_rosname_scratch.clear();
+  _actor_by_id.clear();
+  _id_by_actor.clear();
+  _ego_actor_id = 0;
   _enabled = false;
 #if defined(WITH_ROS2_DEMO)
   _basic_publisher.reset();
   _basic_subscriber.reset();
 #endif
-}
-
-// ---------------------------------------------------------------------------
-// Temporary out-of-tree-extension seam stubs (Task 11). MakeExtensionHost()'s
-// real body (Task 12) fills in every CarlaRos2Host vtable slot so the
-// extension can register sensor observers, create publishers/subscribers, and
-// apply ackermann control through the host; TeardownExtensionEndpoints()'s
-// real body (Task 13) reclaims those extension-created endpoints before
-// on_shutdown/dlclose run (see CarlaRos2Extension.h's endpoint-lifetime note).
-// Both are intentionally minimal here: with no extension .so wired up yet,
-// FCarlaEngine's loader keeps a host with only api_version set, and there are
-// no endpoints to tear down. Declared for FCarlaEngine in CarlaEngine.cpp
-// (temporary, until the real ExtensionHost.h lands).
-CarlaRos2Host MakeExtensionHost() {
-  CarlaRos2Host h = {};
-  h.api_version = CARLA_ROS2_EXTENSION_API_VERSION;
-  return h;
-}
-
-void TeardownExtensionEndpoints() {
-  // no-op: no extension-created endpoints exist until Task 13.
 }
 
 }  // namespace ros2
