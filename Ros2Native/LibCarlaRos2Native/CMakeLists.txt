@@ -28,6 +28,19 @@ file (
   ${LIBCARLA_SOURCE_PATH}/carla/ros2/types/*.cpp
 )
 
+# The glob above intentionally omits carla/ros2/extension/ — ExtensionHost.cpp
+# is DDS-free and lives in carla-server (see LibCarla/CMakeLists.txt). But
+# ExtensionBlobEndpoints.cpp is the ONE extension TU that links CycloneDDS
+# (carla_cdr_* / dds_*, gated on CARLA_ROS2_MIDDLEWARE_CYCLONEDDS), so it MUST
+# compile into THIS target where that macro and libddsc are available. Add it
+# explicitly; carla-server references its symbols only through the DDS-free
+# ExtensionBlobEndpoints.h forward declarations, resolved against this .so.
+list (
+  APPEND
+  LIBCARLA_ROS2_SOURCES
+  ${LIBCARLA_SOURCE_PATH}/carla/ros2/extension/ExtensionBlobEndpoints.cpp
+)
+
 file (
   GLOB
   LIBCARLA_ROS2_HEADERS

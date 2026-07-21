@@ -21,19 +21,19 @@ namespace carla {
 namespace ros2 {
 
 // Builds the CarlaRos2Host vtable handed to carla_ros2_extension_init at Load()
-// time. host_ctx is the ROS2 singleton pointer; every function pointer routes
-// back through it. The observer/actor-query slots are filled here (Task 12);
-// the create_publisher / publish / create_subscriber / apply_ackermann_control
-// slots are filled by Tasks 13-14 and left null until then.
+// time. host_ctx is the ROS2 singleton pointer; the observer/actor-query slots
+// route back through it. The create_publisher / publish / create_subscriber
+// slots forward to the CycloneDDS-linked blob endpoints (Task 13); only
+// apply_ackermann_control remains null until Task 14.
 CarlaRos2Host MakeExtensionHost();
 
 // Reclaims host-owned state the extension registered through the vtable, called
 // by the loader BEFORE the extension's on_shutdown and before dlclose (see the
-// endpoint-lifetime note in CarlaRos2Extension.h). In Task 12 the only such
-// state is the sensor-observer registry: clearing it drops every
-// extension-supplied function pointer so a late dispatch can never call into a
-// soon-to-be-unloaded .so. The DDS reader/writer reclamation is layered on in
-// Task 13 from the DDS-linked TU.
+// endpoint-lifetime note in CarlaRos2Extension.h). It destroys every
+// extension-created DDS reader/writer (BlobTeardownAll, from the DDS-linked TU)
+// AND clears the sensor-observer registry, dropping every extension-supplied
+// function pointer so neither a late sensor dispatch nor a data-available
+// listener can call into a soon-to-be-unloaded .so or a freed extension state.
 void TeardownExtensionEndpoints();
 
 }  // namespace ros2

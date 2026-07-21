@@ -96,6 +96,11 @@ typedef struct {
 // different observer may be invoked again, from the same or another thread,
 // before this call returns).
 typedef void (*CarlaRos2SensorObserver)(void* user, const CarlaRos2SensorSample* sample);
+// Delivers ONE received message as a full raw CDR buffer: `cdr`/`len` span the
+// complete serialized message INCLUDING the leading 4-byte CDR encapsulation
+// header (classic PLAIN_CDR little-endian is 0x00 0x01 0x00 0x00), exactly as it
+// arrives on the wire — the host does no stripping. `cdr` is valid ONLY for the
+// duration of the call; copy if retained.
 typedef void (*CarlaRos2SubCallback)(void* user, const uint8_t* cdr, size_t len);
 
 // Host vtable: filled by core, consumed by the extension. host_ctx is passed
@@ -116,6 +121,11 @@ typedef struct CarlaRos2Host {
   CarlaRos2PubHandle (*create_publisher)(void* host_ctx, const char* topic,
                                          const char* type_name, const char* type_hash,
                                          const CarlaRos2Qos* qos);
+  // `cdr`/`len` MUST be a full serialized CDR message INCLUDING the leading
+  // 4-byte encapsulation header (classic PLAIN_CDR little-endian is
+  // 0x00 0x01 0x00 0x00); the host wraps these bytes verbatim onto the wire and
+  // does not prepend a header. Returns 0 on success, -1 on an unknown handle or
+  // a write failure.
   int (*publish)(void* host_ctx, CarlaRos2PubHandle h, const uint8_t* cdr, size_t len);
 
   CarlaRos2SubHandle (*create_subscriber)(void* host_ctx, const char* topic,

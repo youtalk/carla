@@ -16,6 +16,10 @@ bool SetActiveMiddleware(Middleware requested) {
   return resolution.success;
 }
 
+Middleware GetActiveMiddleware() {
+  return MiddlewareFactory::GetMiddleware();
+}
+
 std::string GetAvailableMiddleware() {
   return MiddlewareFactory::GetAvailableMiddlewareString();
 }

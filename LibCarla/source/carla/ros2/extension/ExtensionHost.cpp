@@ -5,13 +5,16 @@
 // For a copy, see <https://opensource.org/licenses/MIT>.
 //
 // Host-side extension seam, compiled into carla-server (WITH_ROS2, NO DDS
-// vendor macros). Every function here is a thin trampoline that recovers the
-// ROS2 singleton from host_ctx and forwards to a ROS2 member — this TU is
-// DDS-free by contract (see ExtensionHost.h). The DDS-backed vtable slots
-// (create_publisher / publish / create_subscriber / apply_ackermann_control)
-// are filled from a separate DDS-linked TU in Tasks 13-14; they stay null here.
+// vendor macros). Every function here is a thin trampoline — the observer/actor
+// slots recover the ROS2 singleton from host_ctx and forward to a ROS2 member;
+// the blob pub/sub slots forward to the CycloneDDS-linked BlobCreate*/BlobPublish
+// functions declared in the DDS-free ExtensionBlobEndpoints.h (defined in the
+// carla-ros2-native TU, resolved at link time). This TU therefore stays DDS-free
+// by contract (see ExtensionHost.h). The apply_ackermann_control slot is still
+// filled from the DDS-linked TU in Task 14; it stays null here.
 
 #include "carla/ros2/extension/ExtensionHost.h"
+#include "carla/ros2/extension/ExtensionBlobEndpoints.h"
 #include "carla/ros2/ROS2.h"
 
 namespace carla {
@@ -33,6 +36,27 @@ static const char *host_get_actor_ros_name(void *ctx, uint32_t actor_id) {
   return static_cast<ROS2 *>(ctx)->GetActorRosNameForExtension(actor_id);
 }
 
+// Blob pub/sub slots. Unlike the observer/actor slots these need no host_ctx:
+// the writer/reader registry is a process-global in the DDS-linked TU, keyed by
+// opaque handle, so the ROS2 singleton is irrelevant to endpoint identity.
+static CarlaRos2PubHandle host_create_publisher(
+    void * /*ctx*/, const char *topic, const char *type_name,
+    const char *type_hash, const CarlaRos2Qos *qos) {
+  return BlobCreatePublisher(topic, type_name, type_hash, qos);
+}
+
+static int host_publish(void * /*ctx*/, CarlaRos2PubHandle h,
+                        const uint8_t *cdr, size_t len) {
+  return BlobPublish(h, cdr, len);
+}
+
+static CarlaRos2SubHandle host_create_subscriber(
+    void * /*ctx*/, const char *topic, const char *type_name,
+    const char *type_hash, const CarlaRos2Qos *qos,
+    CarlaRos2SubCallback cb, void *user) {
+  return BlobCreateSubscriber(topic, type_name, type_hash, qos, cb, user);
+}
+
 CarlaRos2Host MakeExtensionHost() {
   CarlaRos2Host h = {};
   h.api_version = CARLA_ROS2_EXTENSION_API_VERSION;
@@ -40,16 +64,23 @@ CarlaRos2Host MakeExtensionHost() {
   h.register_sensor_observer = &host_register_sensor_observer;
   h.get_ego_actor_id = &host_get_ego_actor_id;
   h.get_actor_ros_name = &host_get_actor_ros_name;
-  // create_publisher / publish / create_subscriber / apply_ackermann_control
-  // are wired from the DDS-linked TU in Tasks 13-14; left null here.
+  h.create_publisher = &host_create_publisher;
+  h.publish = &host_publish;
+  h.create_subscriber = &host_create_subscriber;
+  // apply_ackermann_control is wired from the DDS-linked TU in Task 14; null here.
   return h;
 }
 
 void TeardownExtensionEndpoints() {
-  // Task 12: the only host-owned, extension-registered state is the observer
-  // registry; clear it so a late dispatch cannot call a function pointer into a
-  // soon-to-be-dlclose'd .so. DDS reader/writer reclamation layers on in Task
-  // 13 from the DDS-linked TU (this TU must stay DDS-free).
+  // Reclaim host-owned, extension-registered state BEFORE the loader runs the
+  // extension's on_shutdown + dlclose. Destroy the DDS readers/writers FIRST
+  // (BlobTeardownAll, in the DDS-linked TU): a reader's data-available listener
+  // holds function pointers into the .so (br->cb) and the ExtensionState
+  // (br->user), so it must be silenced before either goes away. Then drop the
+  // observer registry. The shared participant is a process-lifetime static and
+  // is intentionally NOT torn down here, so this ordering satisfies the ABI's
+  // "destroy endpoints before participant teardown" contract trivially.
+  BlobTeardownAll();
   ROS2::GetInstance()->ClearExtensionObservers();
 }
 
