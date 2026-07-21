@@ -206,6 +206,10 @@ FCarlaActor* UActorDispatcher::RegisterActor(
       std::string RosName;
       std::string RosTopicName;
       carla::ros2::PublisherQos Qos = carla::ros2::PublisherQos::SensorData();
+      // Opt-in 10-float PointXYZIRCAEDT layout, lidar-only (only the
+      // ray_cast / hss_lidar CarlaLidarPublisher path reads it back). Default
+      // false reproduces the 16-byte XYZI wire layout.
+      bool ExtendedLidar = false;
       for (auto &&Attr : Description.Variations)
       {
         if (Attr.Key == "ros_name")
@@ -215,6 +219,10 @@ FCarlaActor* UActorDispatcher::RegisterActor(
         else if (Attr.Key == "ros_topic_name")
         {
           RosTopicName = std::string(TCHAR_TO_UTF8(*Attr.Value.Value));
+        }
+        else if (Attr.Key == "ros2_extended_lidar")
+        {
+          ExtendedLidar = Attr.Value.Value.ToBool();
         }
         else if (Attr.Key == "ros2_qos_reliability")
         {
@@ -282,7 +290,7 @@ FCarlaActor* UActorDispatcher::RegisterActor(
       }
       if (!ResolvedRosName.empty())
       {
-        ROS2->RegisterSensor(static_cast<void*>(&Actor), ResolvedRosName, ResolvedRosName, true, RosTopicName, Qos);
+        ROS2->RegisterSensor(static_cast<void*>(&Actor), ResolvedRosName, ResolvedRosName, true, RosTopicName, Qos, ExtendedLidar);
       }
 
       // vehicle controller for hero. Scan the variations once for the hero role and the

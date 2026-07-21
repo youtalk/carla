@@ -6,6 +6,8 @@
 
 #include "carla/ros2/publishers/CarlaLidarPublisher.h"
 
+#include "carla/ros2/publishers/ExtendedLidarPoint.h"
+
 #include <cstring>
 
 namespace carla {
@@ -34,21 +36,39 @@ static_assert(
 }  // namespace
 
 std::size_t CarlaLidarPublisher::GetPointSize() const {
-  return sizeof(LidarPoint);
+  return _extended ? sizeof(LidarPointEx) : sizeof(LidarPoint);
 }
 
 const PointFieldDescriptor *CarlaLidarPublisher::GetFieldDescriptors() const {
-  return kLidarFields.data();
+  return _extended ? kLidarFieldsExtended.data() : kLidarFields.data();
 }
 
 std::size_t CarlaLidarPublisher::GetFieldDescriptorCount() const {
-  return kLidarFields.size();
+  return _extended ? kLidarFieldsExtended.size() : kLidarFields.size();
 }
 
 std::vector<std::uint8_t> CarlaLidarPublisher::ComputePointCloud(
     std::uint32_t height, std::uint32_t width, const std::uint8_t *data) const {
   const std::size_t total_points =
       static_cast<std::size_t>(height) * static_cast<std::size_t>(width);
+
+  if (_extended) {
+    // Extended path: the input is a contiguous LidarPointEx[] assembled by
+    // ProcessDataFromLidar (unflipped, CARLA/UE frame). Copy it, then map each
+    // point into the ROS right-handed frame — the same Y negation the legacy
+    // path applies below, but here azimuth's sign flips with y too (see
+    // ApplyRosFrameFlip). x/z/intensity/return_type/channel/elevation/distance/
+    // time_stamp pass through unchanged.
+    const std::size_t total_bytes = total_points * sizeof(LidarPointEx);
+    std::vector<std::uint8_t> bytes(total_bytes);
+    std::memcpy(bytes.data(), data, total_bytes);
+    auto *points = reinterpret_cast<LidarPointEx *>(bytes.data());
+    for (std::size_t i = 0; i < total_points; ++i) {
+      ApplyRosFrameFlip(points[i]);
+    }
+    return bytes;
+  }
+
   const std::size_t total_bytes = total_points * sizeof(LidarPoint);
 
   std::vector<std::uint8_t> bytes(total_bytes);

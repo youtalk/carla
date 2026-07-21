@@ -35,6 +35,7 @@
 #include "publishers/CarlaISCameraPublisher.h"
 #include "publishers/CarlaDVSCameraPublisher.h"
 #include "publishers/CarlaLidarPublisher.h"
+#include "publishers/ExtendedLidarPoint.h"
 #include "publishers/CarlaSemanticLidarPublisher.h"
 #include "publishers/CarlaRadarPublisher.h"
 #include "publishers/CarlaIMUPublisher.h"
@@ -52,7 +53,9 @@
   #include "subscribers/BasicSubscriber.h"
 #endif
 
+#include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <utility>
@@ -177,7 +180,7 @@ void ROS2::SetTimestamp(double timestamp) {
 
 void ROS2::RegisterSensor(
     void *actor, std::string ros_name, std::string frame_id, bool publish_tf,
-    std::string ros_topic_name, PublisherQos qos) {
+    std::string ros_topic_name, PublisherQos qos, bool extended_lidar) {
   // insert_or_assign so re-registering an actor with a new ros_name actually
   // updates the entry; unordered_map::insert would silently keep the stale
   // one.
@@ -187,6 +190,7 @@ void ROS2::RegisterSensor(
   reg.ros_topic_name = std::move(ros_topic_name);
   reg.publish_tf = publish_tf;
   reg.qos = qos;
+  reg.extended_lidar = extended_lidar;
   _registrations.insert_or_assign(actor, std::move(reg));
 }
 
@@ -458,8 +462,13 @@ std::shared_ptr<BasePublisher> ROS2::GetOrCreateSensor(
       // struct default, so this edge case cannot silently upgrade a lidar to
       // a subscriber-blocking writer.
       const PublisherQos qos = reg_it != _registrations.end() ? reg_it->second.qos : PublisherQos::SensorData();
+      // Opt-in 10-float PointXYZIRCAEDT layout: baked into the publisher at
+      // creation time so its field table / point_step are fixed for the
+      // publisher's lifetime (a mid-stream layout switch would desync
+      // subscribers). Defaults to false for an unregistered/plain lidar.
+      const bool extended = reg_it != _registrations.end() && reg_it->second.extended_lidar;
       publisher = std::make_shared<CarlaLidarPublisher>(
-          BuildBaseTopicName(actor), LookupFrameId(actor), has_override, qos);
+          BuildBaseTopicName(actor), LookupFrameId(actor), has_override, qos, extended);
       break;
     }
     case ESensors::LaneInvasionSensor:
@@ -695,9 +704,49 @@ void ROS2::ProcessDataFromLidar(
     // points. Each detection is 4 floats: x, y, z, intensity. Divide the total
     // float count by 4 to recover the number of detections.
     const auto width = static_cast<std::uint32_t>(data._points.size() / 4u);
-    publisher->WritePointCloud(
-        _seconds, _nanoseconds, 1u, width,
-        reinterpret_cast<const std::uint8_t *>(data._points.data()));
+    if (publisher->IsExtended()) {
+      // Extended (canonical 32-byte PointXYZIRCAEDT) path: assemble a
+      // LidarPointEx[] by zipping the flat x/y/z/intensity from _points with the
+      // parallel _points_extra companion (channel/azimuth/elevation/distance,
+      // filled 1:1 by the sensor). intensity is quantized from CARLA's float
+      // attenuation factor to the canonical UINT8 (QuantizeIntensity);
+      // return_type comes from the companion. time_stamp is the per-point
+      // nanosecond offset from the message header stamp — CARLA delivers a whole
+      // scan at one simulation tick, so the offset is 0 for every point and the
+      // absolute time lives in header.stamp (set by WritePointCloud). Points are
+      // left in the CARLA/UE frame here; the publisher applies the ROS Y/azimuth
+      // flip in ComputePointCloud, exactly as the legacy 16-byte path flips y.
+      //
+      // Guard on the companion length: the sensor's extended flag and the
+      // publisher's are both derived from ros2_extended_lidar so they agree in
+      // practice, but if the companion is short (e.g. a first frame before the
+      // sensor observed the attribute) publish only the points we have full
+      // data for rather than reading past _points_extra.
+      const auto ex_width =
+          static_cast<std::uint32_t>(std::min<std::size_t>(width, data._points_extra.size()));
+      std::vector<LidarPointEx> packed(ex_width);
+      for (std::uint32_t i = 0; i < ex_width; ++i) {
+        const auto &extra = data._points_extra[i];
+        LidarPointEx &p = packed[i];
+        p.x = data._points[i * 4u + 0u];
+        p.y = data._points[i * 4u + 1u];
+        p.z = data._points[i * 4u + 2u];
+        p.intensity = QuantizeIntensity(data._points[i * 4u + 3u]);
+        p.return_type = extra.return_type;
+        p.channel = extra.channel;
+        p.azimuth = extra.azimuth;
+        p.elevation = extra.elevation;
+        p.distance = extra.distance;
+        p.time_stamp = 0u;
+      }
+      publisher->WritePointCloud(
+          _seconds, _nanoseconds, 1u, ex_width,
+          reinterpret_cast<const std::uint8_t *>(packed.data()));
+    } else {
+      publisher->WritePointCloud(
+          _seconds, _nanoseconds, 1u, width,
+          reinterpret_cast<const std::uint8_t *>(data._points.data()));
+    }
     publisher->Publish();
   }
   if (auto transform_publisher = GetOrCreateTransformPublisher(actor)) {
