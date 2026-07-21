@@ -177,6 +177,10 @@ namespace client {
 
     void FreezeAllTrafficLights(bool frozen);
 
+    /// Globally enable/disable CARLA-side ROS 2 TF publishing. Disable when an
+    /// external stack (e.g. Autoware) owns the localization TF tree.
+    void SetPublishTF(bool enabled);
+
     /// Returns all the BBs of all the elements of the level
     std::vector<geom::BoundingBox> GetLevelBBs(uint8_t queried_tag) const;
 

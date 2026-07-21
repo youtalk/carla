@@ -445,6 +445,10 @@ EpisodeProxy Simulator::GetCurrentEpisode() {
     _client.FreezeAllTrafficLights(frozen);
   }
 
+  void Simulator::SetPublishTF(bool enabled) {
+    _client.SetPublishTF(enabled);
+  }
+
   // =========================================================================
   /// -- Texture updating operations
   // =========================================================================

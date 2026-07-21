@@ -843,6 +843,8 @@ namespace detail {
 
     void FreezeAllTrafficLights(bool frozen);
 
+    void SetPublishTF(bool enabled);
+
     /// @}
     // =========================================================================
     /// @name Texture updating operations

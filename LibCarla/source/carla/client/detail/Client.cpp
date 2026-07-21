@@ -612,6 +612,10 @@ namespace detail {
     _pimpl->AsyncCall("freeze_all_traffic_lights", frozen);
   }
 
+  void Client::SetPublishTF(bool enabled) {
+    _pimpl->AsyncCall("set_publish_tf", enabled);
+  }
+
   std::vector<geom::BoundingBox> Client::GetLightBoxes(rpc::ActorId traffic_light) const {
     using return_t = std::vector<geom::BoundingBox>;
     return _pimpl->CallAndWait<return_t>("get_light_boxes", traffic_light);

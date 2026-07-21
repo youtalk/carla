@@ -81,6 +81,13 @@ public:
   void SetFrame(uint64_t frame);
   void SetTimestamp(double timestamp);
 
+  // World-global TF publishing switch (World::SetPublishTF RPC). Disable when
+  // an external stack (e.g. Autoware) owns the localization TF tree: once
+  // false, GetOrCreateTransformPublisher returns nullptr for every actor
+  // regardless of the per-actor publish_tf flag set at RegisterSensor time.
+  void SetPublishTF(bool enabled) { _publish_tf_global = enabled; }
+  bool GetPublishTF() const { return _publish_tf_global; }
+
   // actor registration API: replaces the legacy AddActorRosName /
   // GetActorRosName / GetActorParentRosName surface that PR-2 stubbed and
   // PR-4 retired. The plugin calls RegisterSensor / RegisterVehicle when an
@@ -112,6 +119,13 @@ public:
   PublisherQos LookupSensorQosForTest(void *actor) const {
     auto it = _registrations.find(actor);
     return it == _registrations.end() ? PublisherQos() : it->second.qos;
+  }
+
+  // Test-only accessor: exercises the private GetOrCreateTransformPublisher
+  // lazy-create/gate logic (including the _publish_tf_global early-return)
+  // without needing a live DDS publisher round-trip.
+  std::shared_ptr<CarlaTransformPublisher> GetOrCreateTransformPublisherForTest(void *actor) {
+    return GetOrCreateTransformPublisher(actor);
   }
 
   void UnregisterSensor(void *actor);
@@ -234,9 +248,12 @@ private:
     std::string frame_id;
     std::string ros_topic_name;   // non-empty => verbatim topic, no composition
     bool publish_tf{true};
-    // Default = Reliable/Volatile/depth1, matching every publisher's
-    // pre-QoS-support behavior. Lidar sensors get their QoS parsed from the
-    // ros2_qos_* blueprint attributes (see ActorDispatcher::RegisterActor).
+    // RegisterSensor always overwrites this (default SensorData()); the
+    // struct default below is never actually observed and exists only so
+    // ActorRegistration is default-constructible. Lidar sensors get their QoS
+    // parsed from the ros2_qos_* blueprint attributes (see
+    // ActorDispatcher::RegisterActor); every other sensor type stores
+    // RegisterSensor's default but never reads it back.
     PublisherQos qos{};
   };
 
@@ -281,6 +298,7 @@ private:
   uint64_t _frame{0};
   int32_t _seconds{0};
   uint32_t _nanoseconds{0};
+  bool _publish_tf_global{true};
 
   std::unordered_map<void *, ActorRegistration> _registrations;
   std::unordered_map<void *, std::vector<void *>> _actor_parents;

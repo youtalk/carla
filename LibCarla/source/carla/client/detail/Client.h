@@ -393,6 +393,8 @@ namespace detail {
 
     void FreezeAllTrafficLights(bool frozen);
 
+    void SetPublishTF(bool enabled);
+
     std::vector<geom::BoundingBox> GetLightBoxes(
         rpc::ActorId traffic_light) const;
 
