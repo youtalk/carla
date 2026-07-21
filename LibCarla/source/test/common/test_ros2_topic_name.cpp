@@ -18,9 +18,15 @@
 // the client side instead of a link failure.
 #if defined(WITH_ROS2)
 #include "carla/ros2/ROS2.h"
+#include "carla/ros2/publishers/CarlaRadarPublisher.h"
+#include "carla/ros2/publishers/CarlaSemanticLidarPublisher.h"
 #include "carla/ros2/publishers/PointCloudTopic.h"
 
+#include <memory>
+
 using carla::ros2::ROS2;
+using carla::ros2::CarlaRadarPublisher;
+using carla::ros2::CarlaSemanticLidarPublisher;
 using carla::ros2::ComposePointCloudTopic;
 
 TEST(ros2_topic_name, empty_override_uses_default_composition) {
@@ -67,5 +73,59 @@ TEST(ros2_topic_name, compose_point_cloud_topic_default_appends_suffix) {
   EXPECT_EQ(
       ComposePointCloudTopic("rt/carla/lidar_top", false, "point_cloud"),
       "rt/carla/lidar_top/point_cloud");
+}
+
+// The following four tests exercise GetOrCreateSensor's Radar and
+// RayCastSemanticLidar branches end to end (real publisher construction, real
+// DDS Init, same as GetOrCreateTransformPublisherForTest in
+// test_ros2_publish_tf.cpp) to pin the fix that threads has_topic_override
+// into the whole point-cloud publisher family, not just RayCastLidar: before
+// the fix, a radar/semantic-lidar with a non-empty ros_topic_name override
+// still got "/point_cloud" appended, because the publisher was always
+// constructed with the default has_topic_override=false.
+TEST(ros2_topic_name, radar_override_is_verbatim_on_publisher) {
+  auto ros2 = ROS2::GetInstance();
+  int dummy = 0;
+  ros2->RegisterSensor(&dummy, "radar_front", "radar_front", true,
+                       "/sensing/radar/front/pointcloud_raw");
+  auto publisher = std::dynamic_pointer_cast<CarlaRadarPublisher>(
+      ros2->GetOrCreateRadarSensorForTest(1u, &dummy));
+  ASSERT_NE(publisher, nullptr);
+  EXPECT_TRUE(publisher->HasTopicOverride());
+  ros2->UnregisterSensor(&dummy);
+}
+
+TEST(ros2_topic_name, radar_default_has_no_override_on_publisher) {
+  auto ros2 = ROS2::GetInstance();
+  int dummy = 0;
+  ros2->RegisterSensor(&dummy, "radar_front", "radar_front", true, "");
+  auto publisher = std::dynamic_pointer_cast<CarlaRadarPublisher>(
+      ros2->GetOrCreateRadarSensorForTest(1u, &dummy));
+  ASSERT_NE(publisher, nullptr);
+  EXPECT_FALSE(publisher->HasTopicOverride());
+  ros2->UnregisterSensor(&dummy);
+}
+
+TEST(ros2_topic_name, semantic_lidar_override_is_verbatim_on_publisher) {
+  auto ros2 = ROS2::GetInstance();
+  int dummy = 0;
+  ros2->RegisterSensor(&dummy, "lidar_top_semantic", "lidar_top_semantic", true,
+                       "/sensing/lidar/top/pointcloud_raw_semantic");
+  auto publisher = std::dynamic_pointer_cast<CarlaSemanticLidarPublisher>(
+      ros2->GetOrCreateSemanticLidarSensorForTest(1u, &dummy));
+  ASSERT_NE(publisher, nullptr);
+  EXPECT_TRUE(publisher->HasTopicOverride());
+  ros2->UnregisterSensor(&dummy);
+}
+
+TEST(ros2_topic_name, semantic_lidar_default_has_no_override_on_publisher) {
+  auto ros2 = ROS2::GetInstance();
+  int dummy = 0;
+  ros2->RegisterSensor(&dummy, "lidar_top_semantic", "lidar_top_semantic", true, "");
+  auto publisher = std::dynamic_pointer_cast<CarlaSemanticLidarPublisher>(
+      ros2->GetOrCreateSemanticLidarSensorForTest(1u, &dummy));
+  ASSERT_NE(publisher, nullptr);
+  EXPECT_FALSE(publisher->HasTopicOverride());
+  ros2->UnregisterSensor(&dummy);
 }
 #endif  // defined(WITH_ROS2)

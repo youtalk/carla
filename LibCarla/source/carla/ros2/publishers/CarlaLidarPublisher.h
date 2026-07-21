@@ -17,7 +17,7 @@ public:
   // attribute ros2_extended_lidar, threaded via ActorRegistration): when true
   // every layout accessor and ComputePointCloud below switches to the 32-byte
   // LidarPointEx wire form. Defaults to false so an unadorned lidar is
-  // byte-identical to the pre-Task-9 16-byte XYZI publisher. ProcessDataFromLidar
+  // byte-identical to the original 16-byte XYZI publisher. ProcessDataFromLidar
   // must feed WritePointCloud the matching stride (LidarPointEx[] vs the flat
   // 4-float _points buffer); IsExtended() lets it pick the right one.
   CarlaLidarPublisher(

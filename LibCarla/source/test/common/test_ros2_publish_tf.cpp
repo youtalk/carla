@@ -49,9 +49,9 @@ TEST(ros2_publish_tf, set_false_suppresses_all_tf) {
   ros2->SetPublishTF(true);   // restore for other tests
 }
 
-// Cache-hit-then-suppress pin: matches the live-verified behavior (Task 8
-// report Step 7) where an already-lazily-created transform publisher goes
-// silent the moment global suppression is set, without needing
+// Cache-hit-then-suppress pin: matches the live-verified behavior where an
+// already-lazily-created transform publisher goes silent the moment global
+// suppression is set, without needing
 // re-registration. This only passes because ROS2::GetOrCreateTransformPublisher
 // checks _publish_tf_global *before* consulting the _transforms cache; a
 // refactor that moved the flag check below the cache lookup would keep

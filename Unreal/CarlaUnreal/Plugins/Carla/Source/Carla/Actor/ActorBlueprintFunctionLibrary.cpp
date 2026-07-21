@@ -236,7 +236,10 @@ static void FillIdAndTags(FActorDefinition &Def, TStrs &&...Strings)
   // Per-actor topic override: empty (default) keeps the composed
   // "rt/carla/[parent/]ros_name" topic; a non-empty value is published
   // verbatim so tier4/Autoware-compatible topic names can be configured
-  // without renaming the actor itself.
+  // without renaming the actor itself. Named "ros_topic_name" WITHOUT the "2"
+  // (unlike the ros2_qos_*/ros2_extended_lidar/ros2_ackermann_control
+  // attributes below) because the attribute name must match tier4's fork
+  // exactly for compatibility.
   FActorVariation RosTopicName;
   RosTopicName.Id = TEXT("ros_topic_name");
   RosTopicName.Type = EActorAttributeType::String;
@@ -1122,8 +1125,11 @@ void UActorBlueprintFunctionLibrary::MakeLidarDefinition(
   // Per-sensor ROS 2 QoS attributes, lidar-only (high-rate point clouds are
   // the one publisher family that needs a configurable reliability /
   // durability / history-depth profile to match AWSIM/tier4 consumers, e.g.
-  // BEST_EFFORT / VOLATILE / depth 5 for LiDAR). Parsed into a
-  // carla::ros2::PublisherQos by ActorDispatcher::RegisterActor. RecommendedValues[0]
+  // BEST_EFFORT / VOLATILE / depth 5 for LiDAR). These (and ros2_extended_lidar
+  // below) keep the "2" in their "ros2_" prefix, unlike ros_topic_name above —
+  // they are CARLA-native attributes with no tier4 counterpart to match, so
+  // they follow the in-tree ros2_ackermann_control naming precedent instead.
+  // Parsed into a carla::ros2::PublisherQos by ActorDispatcher::RegisterActor. RecommendedValues[0]
   // is what every spawn transmits unless the caller overrides the attribute,
   // so it must reproduce the pre-QoS-support wire default exactly
   // (best_effort/volatile/depth 1, i.e. PublisherQos::SensorData()) — NOT the

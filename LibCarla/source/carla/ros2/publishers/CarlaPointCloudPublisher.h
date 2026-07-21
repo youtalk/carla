@@ -64,6 +64,12 @@ public:
       std::uint32_t width,
       const std::uint8_t *data);
 
+  // Test/inspection accessor: true when this publisher was constructed with a
+  // verbatim ros_topic_name override (see ctor comment above). Lets unit tests
+  // confirm the flag reached the base class for every subclass in the
+  // point-cloud family without needing to observe the DDS wire directly.
+  [[nodiscard]] bool HasTopicOverride() const noexcept { return _has_topic_override; }
+
 protected:
   [[nodiscard]] virtual std::size_t GetPointSize() const = 0;
   [[nodiscard]] virtual const PointFieldDescriptor *GetFieldDescriptors() const = 0;
@@ -80,6 +86,7 @@ private:
       std::vector<std::uint8_t> data);
 
   std::shared_ptr<PublisherImpl<CarlaPointCloudMsgTraits>> _impl;
+  bool _has_topic_override{false};
 };
 
 }  // namespace ros2

@@ -143,6 +143,18 @@ public:
     return GetOrCreateTransformPublisher(actor);
   }
 
+  // Test-only accessors: exercise the private GetOrCreateSensor dispatch for
+  // the Radar / RayCastSemanticLidar branches (including the has_topic_override
+  // plumbing) without needing a full ProcessDataFromRadar/SemanticLidar call
+  // with real sensor payloads. The ESensors enum they bake in is TU-local to
+  // ROS2.cpp, so these thin wrappers (defined there) are the only way to reach
+  // a specific branch from outside; see CarlaPointCloudPublisher::HasTopicOverride
+  // for the assertion these enable.
+  std::shared_ptr<BasePublisher> GetOrCreateRadarSensorForTest(
+      carla::streaming::detail::stream_id_type id, void *actor);
+  std::shared_ptr<BasePublisher> GetOrCreateSemanticLidarSensorForTest(
+      carla::streaming::detail::stream_id_type id, void *actor);
+
   void UnregisterSensor(void *actor);
   void RegisterVehicle(
       void *actor, std::string ros_name, std::string frame_id, ActorCallback callback,
@@ -263,13 +275,18 @@ private:
     std::string frame_id;
     std::string ros_topic_name;   // non-empty => verbatim topic, no composition
     bool publish_tf{true};
-    // RegisterSensor always overwrites this (default SensorData()); the
-    // struct default below is never actually observed and exists only so
-    // ActorRegistration is default-constructible. Lidar sensors get their QoS
-    // parsed from the ros2_qos_* blueprint attributes (see
-    // ActorDispatcher::RegisterActor); every other sensor type stores
-    // RegisterSensor's default but never reads it back.
-    PublisherQos qos{};
+    // Defaults to SensorData() (best_effort/volatile/depth1) so this struct
+    // default matches RegisterSensor's own default parameter exactly.
+    // RegisterVehicle's designated-init (ActorRegistration{...}) never sets
+    // .qos explicitly, so before this change it silently fell back to the
+    // plain PublisherQos{} struct default (Reliable) instead — a divergence
+    // between the vehicle and sensor registration paths with no functional
+    // consequence today (qos is lidar-only, see below) but a footgun for any
+    // future reader who fell back to .qos on a vehicle registration. Lidar
+    // sensors get their QoS parsed from the ros2_qos_* blueprint attributes
+    // (see ActorDispatcher::RegisterActor); every other sensor/actor type
+    // stores this default but never reads it back.
+    PublisherQos qos{PublisherQos::SensorData()};
     // Opt-in 10-float PointXYZIRCAEDT layout (ros2_extended_lidar). Same
     // lidar-only lifecycle as qos: set by RegisterSensor, consumed only by
     // GetOrCreateSensor's lidar branch.

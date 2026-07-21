@@ -143,8 +143,8 @@ TEST(extended_lidar, intensity_quantizes_to_uint8) {
 
 #if defined(WITH_ROS2)
 // The extended flag threads through RegisterSensor into the ActorRegistration,
-// exactly like ros_topic_name / qos (Tasks 6-7), and defaults to false when the
-// caller omits it.
+// exactly like ros_topic_name / qos, and defaults to false when the caller
+// omits it.
 TEST(extended_lidar, register_sensor_stores_extended_flag) {
   auto ros2 = carla::ros2::ROS2::GetInstance();
 

@@ -409,9 +409,23 @@ std::shared_ptr<BasePublisher> ROS2::GetOrCreateSensor(
       break;
     }
     case ESensors::DVSCamera: {
-      resolve("dvs");
+      // Skip auto-naming resolution when the sensor has a verbatim
+      // ros_topic_name override: BuildBaseTopicName never consults ros_name in
+      // that case, so resolving the "dvs__" placeholder would be pointless
+      // mutation. has_override also tells the point-cloud side
+      // (CarlaDVSPointCloudPublisher, via the composite) to skip the
+      // "/point_cloud" suffix append (see CarlaPointCloudPublisher::Init) so
+      // the override topic is emitted exactly as configured — mirrors the
+      // ESensors::RayCastLidar branch below for the rest of the point-cloud
+      // publisher family.
+      const auto reg_it = _registrations.find(actor);
+      const bool has_override =
+          reg_it != _registrations.end() && !reg_it->second.ros_topic_name.empty();
+      if (!has_override) {
+        resolve("dvs");
+      }
       publisher = std::make_shared<CarlaDVSCameraPublisher>(
-          BuildBaseTopicName(actor), LookupFrameId(actor));
+          BuildBaseTopicName(actor), LookupFrameId(actor), has_override);
       break;
     }
     case ESensors::GnssSensor: {
@@ -427,15 +441,31 @@ std::shared_ptr<BasePublisher> ROS2::GetOrCreateSensor(
       break;
     }
     case ESensors::Radar: {
-      resolve("radar");
+      // See ESensors::DVSCamera above / ESensors::RayCastLidar below: same
+      // has_override skip-resolve / skip-suffix rationale, mirrored here for
+      // the "radar__" placeholder.
+      const auto reg_it = _registrations.find(actor);
+      const bool has_override =
+          reg_it != _registrations.end() && !reg_it->second.ros_topic_name.empty();
+      if (!has_override) {
+        resolve("radar");
+      }
       publisher = std::make_shared<CarlaRadarPublisher>(
-          BuildBaseTopicName(actor), LookupFrameId(actor));
+          BuildBaseTopicName(actor), LookupFrameId(actor), has_override);
       break;
     }
     case ESensors::RayCastSemanticLidar: {
-      resolve("ray_cast_semantic");
+      // See ESensors::DVSCamera above / ESensors::RayCastLidar below: same
+      // has_override skip-resolve / skip-suffix rationale, mirrored here for
+      // the "ray_cast_semantic__" placeholder.
+      const auto reg_it = _registrations.find(actor);
+      const bool has_override =
+          reg_it != _registrations.end() && !reg_it->second.ros_topic_name.empty();
+      if (!has_override) {
+        resolve("ray_cast_semantic");
+      }
       publisher = std::make_shared<CarlaSemanticLidarPublisher>(
-          BuildBaseTopicName(actor), LookupFrameId(actor));
+          BuildBaseTopicName(actor), LookupFrameId(actor), has_override);
       break;
     }
     case ESensors::RayCastLidar: {
@@ -489,6 +519,16 @@ std::shared_ptr<BasePublisher> ROS2::GetOrCreateSensor(
     _publishers.insert({actor, publisher});
   }
   return publisher;
+}
+
+std::shared_ptr<BasePublisher> ROS2::GetOrCreateRadarSensorForTest(
+    carla::streaming::detail::stream_id_type id, void *actor) {
+  return GetOrCreateSensor(ESensors::Radar, id, actor);
+}
+
+std::shared_ptr<BasePublisher> ROS2::GetOrCreateSemanticLidarSensorForTest(
+    carla::streaming::detail::stream_id_type id, void *actor) {
+  return GetOrCreateSensor(ESensors::RayCastSemanticLidar, id, actor);
 }
 
 std::shared_ptr<CarlaTransformPublisher> ROS2::GetOrCreateTransformPublisher(void *actor) {

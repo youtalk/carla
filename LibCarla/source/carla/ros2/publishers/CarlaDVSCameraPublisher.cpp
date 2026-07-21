@@ -55,11 +55,11 @@ std::vector<std::uint8_t> CarlaDVSPointCloudPublisher::ComputePointCloud(
 }
 
 CarlaDVSCameraPublisher::CarlaDVSCameraPublisher(
-    std::string base_topic_name, std::string frame_id)
+    std::string base_topic_name, std::string frame_id, bool has_topic_override)
   : BasePublisher(base_topic_name, frame_id),
     _image_pub(std::make_shared<CarlaDVSImagePublisher>(base_topic_name, frame_id)),
     _point_cloud_pub(std::make_shared<CarlaDVSPointCloudPublisher>(
-        std::move(base_topic_name), std::move(frame_id))) {}
+        std::move(base_topic_name), std::move(frame_id), has_topic_override)) {}
 
 CarlaDVSCameraPublisher::~CarlaDVSCameraPublisher() = default;
 

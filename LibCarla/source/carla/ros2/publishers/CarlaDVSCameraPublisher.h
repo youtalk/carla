@@ -49,8 +49,14 @@ protected:
 // PR-3's pre-existing ue5-dev wire format.
 class CarlaDVSPointCloudPublisher final : public CarlaPointCloudPublisher {
 public:
-  CarlaDVSPointCloudPublisher(std::string base_topic_name, std::string frame_id)
-    : CarlaPointCloudPublisher(std::move(base_topic_name), std::move(frame_id)) {}
+  // has_topic_override forwards verbatim to CarlaPointCloudPublisher: see its
+  // ctor comment for the "/point_cloud" suffix-suppression rationale, mirrored
+  // here from CarlaLidarPublisher for the whole point-cloud publisher family.
+  CarlaDVSPointCloudPublisher(
+      std::string base_topic_name, std::string frame_id,
+      bool has_topic_override = false)
+    : CarlaPointCloudPublisher(
+          std::move(base_topic_name), std::move(frame_id), has_topic_override) {}
 
 private:
   [[nodiscard]] std::size_t GetPointSize() const override;
@@ -65,7 +71,12 @@ private:
 // visualisation) and the point-cloud-side (raw events) publishers.
 class CarlaDVSCameraPublisher : public BasePublisher {
 public:
-  CarlaDVSCameraPublisher(std::string base_topic_name, std::string frame_id);
+  // has_topic_override reaches only the point-cloud-side sub-publisher: the
+  // image side (CarlaDVSImagePublisher) is a CarlaCameraPublisher, which has
+  // no suffix to suppress in the first place.
+  CarlaDVSCameraPublisher(
+      std::string base_topic_name, std::string frame_id,
+      bool has_topic_override = false);
   ~CarlaDVSCameraPublisher() override;
 
   CarlaDVSCameraPublisher(const CarlaDVSCameraPublisher &) = delete;

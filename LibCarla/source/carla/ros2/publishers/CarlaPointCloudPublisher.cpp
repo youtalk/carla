@@ -64,7 +64,8 @@ CarlaPointCloudPublisher::CarlaPointCloudPublisher(
     std::string base_topic_name, std::string frame_id, bool has_topic_override,
     PublisherQos qos)
   : BasePublisher(std::move(base_topic_name), std::move(frame_id)),
-    _impl(std::make_shared<PublisherImpl<CarlaPointCloudMsgTraits>>()) {
+    _impl(std::make_shared<PublisherImpl<CarlaPointCloudMsgTraits>>()),
+    _has_topic_override(has_topic_override) {
   // qos defaults to SensorData() (best-effort): point clouds are large and
   // per-tick, so a slow subscriber must never block the publishing thread by
   // default. CarlaLidarPublisher forwards the per-sensor
