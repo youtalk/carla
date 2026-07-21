@@ -192,13 +192,18 @@ FCarlaActor* UActorDispatcher::RegisterActor(
     auto ROS2 = carla::ros2::ROS2::GetInstance();
     if (ROS2->IsEnabled())
     {
-      // actor ros_name
+      // actor ros_name / per-actor ros_topic_name override
       std::string RosName;
+      std::string RosTopicName;
       for (auto &&Attr : Description.Variations)
       {
         if (Attr.Key == "ros_name")
         {
           RosName = std::string(TCHAR_TO_UTF8(*Attr.Value.Value));
+        }
+        else if (Attr.Key == "ros_topic_name")
+        {
+          RosTopicName = std::string(TCHAR_TO_UTF8(*Attr.Value.Value));
         }
       }
       const std::string id = std::string(TCHAR_TO_UTF8(*Description.Id));
@@ -220,7 +225,7 @@ FCarlaActor* UActorDispatcher::RegisterActor(
       }
       if (!ResolvedRosName.empty())
       {
-        ROS2->RegisterSensor(static_cast<void*>(&Actor), ResolvedRosName, ResolvedRosName, true);
+        ROS2->RegisterSensor(static_cast<void*>(&Actor), ResolvedRosName, ResolvedRosName, true, RosTopicName);
       }
 
       // vehicle controller for hero. Scan the variations once for the hero role and the

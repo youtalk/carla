@@ -232,6 +232,17 @@ static void FillIdAndTags(FActorDefinition &Def, TStrs &&...Strings)
   Var.RecommendedValues = {Def.Id};
   Var.bRestrictToRecommended = false;
   Def.Variations.Emplace(Var);
+
+  // Per-actor topic override: empty (default) keeps the composed
+  // "rt/carla/[parent/]ros_name" topic; a non-empty value is published
+  // verbatim so tier4/Autoware-compatible topic names can be configured
+  // without renaming the actor itself.
+  FActorVariation RosTopicName;
+  RosTopicName.Id = TEXT("ros_topic_name");
+  RosTopicName.Type = EActorAttributeType::String;
+  RosTopicName.RecommendedValues = {TEXT("")};
+  RosTopicName.bRestrictToRecommended = false;
+  Def.Variations.Emplace(RosTopicName);
 }
 
 static void AddRecommendedValuesForActorRoleName(

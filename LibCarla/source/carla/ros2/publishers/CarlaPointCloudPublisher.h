@@ -36,7 +36,13 @@ struct CarlaPointCloudMsgTraits;
 // pass the (base_topic_name, frame_id) pair through.
 class CarlaPointCloudPublisher : public BasePublisher {
 public:
-  CarlaPointCloudPublisher(std::string base_topic_name, std::string frame_id);
+  // has_topic_override is true when base_topic_name is a verbatim
+  // ros_topic_name override (see ROS2::BuildBaseTopicName): Init then
+  // publishes on base_topic_name as-is instead of appending "/point_cloud",
+  // since Autoware subscribes to the exact configured topic.
+  CarlaPointCloudPublisher(
+      std::string base_topic_name, std::string frame_id,
+      bool has_topic_override = false);
   ~CarlaPointCloudPublisher() override;
 
   CarlaPointCloudPublisher(const CarlaPointCloudPublisher &) = delete;

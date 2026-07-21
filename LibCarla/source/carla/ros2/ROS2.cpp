@@ -176,12 +176,17 @@ void ROS2::SetTimestamp(double timestamp) {
 }
 
 void ROS2::RegisterSensor(
-    void *actor, std::string ros_name, std::string frame_id, bool publish_tf) {
+    void *actor, std::string ros_name, std::string frame_id, bool publish_tf,
+    std::string ros_topic_name) {
   // insert_or_assign so re-registering an actor with a new ros_name actually
   // updates the entry; unordered_map::insert would silently keep the stale
   // one.
-  _registrations.insert_or_assign(
-      actor, ActorRegistration{std::move(ros_name), std::move(frame_id), publish_tf});
+  ActorRegistration reg;
+  reg.ros_name = std::move(ros_name);
+  reg.frame_id = std::move(frame_id);
+  reg.ros_topic_name = std::move(ros_topic_name);
+  reg.publish_tf = publish_tf;
+  _registrations.insert_or_assign(actor, std::move(reg));
 }
 
 void ROS2::UnregisterSensor(void *actor) {
@@ -196,7 +201,8 @@ void ROS2::RegisterVehicle(
     void *actor, std::string ros_name, std::string frame_id, ActorCallback callback,
     bool enable_ackermann_control) {
   _registrations.insert_or_assign(
-      actor, ActorRegistration{ros_name, frame_id, true});
+      actor, ActorRegistration{.ros_name = ros_name, .frame_id = frame_id,
+                               .ros_topic_name = {}, .publish_tf = true});
 
   // Idempotency: drop any prior subscribers / callbacks bound to this actor
   // so a re-registration does not accumulate duplicate DataReaders nor leave
@@ -298,7 +304,19 @@ std::string ROS2::BuildParentChain(void *actor) const {
 }
 
 std::string ROS2::BuildBaseTopicName(void *actor) const {
-  const std::string ros_name = LookupRosName(actor);
+  auto it = _registrations.find(actor);
+  if (it == _registrations.end()) {
+    return std::string{};
+  }
+  // Verbatim override: the runner supplied the exact ROS topic. Prepend only
+  // the DDS wire prefix "rt" (the middleware maps "rt/<x>" <-> ROS "/<x>").
+  // Skip the "carla/" segment, the parent chain, AND the per-type suffix so
+  // the Autoware topic name is emitted exactly as configured.
+  if (!it->second.ros_topic_name.empty()) {
+    const std::string &t = it->second.ros_topic_name;
+    return t.front() == '/' ? "rt" + t : "rt/" + t;
+  }
+  const std::string &ros_name = it->second.ros_name;
   if (ros_name.empty()) {
     return std::string{};
   }
@@ -417,10 +435,21 @@ std::shared_ptr<BasePublisher> ROS2::GetOrCreateSensor(
     }
     case ESensors::RayCastLidar: {
       // Both ray-cast and HSS lidars dispatch here; resolve either placeholder.
-      resolve("ray_cast");
-      resolve("hss_lidar");
+      // Skip auto-naming resolution when the sensor has a verbatim
+      // ros_topic_name override: BuildBaseTopicName never consults ros_name in
+      // that case, so resolving the "prefix__" placeholder would be pointless
+      // mutation. has_override also tells the publisher to skip the
+      // "/point_cloud" suffix append (see CarlaPointCloudPublisher::Init) so
+      // the override topic is emitted exactly as configured.
+      const auto reg_it = _registrations.find(actor);
+      const bool has_override =
+          reg_it != _registrations.end() && !reg_it->second.ros_topic_name.empty();
+      if (!has_override) {
+        resolve("ray_cast");
+        resolve("hss_lidar");
+      }
       publisher = std::make_shared<CarlaLidarPublisher>(
-          BuildBaseTopicName(actor), LookupFrameId(actor));
+          BuildBaseTopicName(actor), LookupFrameId(actor), has_override);
       break;
     }
     case ESensors::LaneInvasionSensor:

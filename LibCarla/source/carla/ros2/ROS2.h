@@ -90,7 +90,13 @@ public:
   // VehicleControl one. The two control topics are mutually exclusive so they
   // cannot contend frame to frame.
   void RegisterSensor(
-      void *actor, std::string ros_name, std::string frame_id, bool publish_tf);
+      void *actor, std::string ros_name, std::string frame_id, bool publish_tf,
+      std::string ros_topic_name = "");
+
+  // Test-only accessor: BuildBaseTopicName itself stays private since it is an
+  // internal composition helper, not part of the actor-registration API.
+  std::string BuildBaseTopicNameForTest(void *actor) const { return BuildBaseTopicName(actor); }
+
   void UnregisterSensor(void *actor);
   void RegisterVehicle(
       void *actor, std::string ros_name, std::string frame_id, ActorCallback callback,
@@ -209,6 +215,7 @@ private:
   struct ActorRegistration {
     std::string ros_name;
     std::string frame_id;
+    std::string ros_topic_name;   // non-empty => verbatim topic, no composition
     bool publish_tf{true};
   };
 
