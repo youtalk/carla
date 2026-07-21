@@ -21,10 +21,11 @@ namespace carla {
 namespace ros2 {
 
 // Builds the CarlaRos2Host vtable handed to carla_ros2_extension_init at Load()
-// time. host_ctx is the ROS2 singleton pointer; the observer/actor-query slots
-// route back through it. The create_publisher / publish / create_subscriber
-// slots forward to the CycloneDDS-linked blob endpoints (Task 13); only
-// apply_ackermann_control remains null until Task 14.
+// time. host_ctx is the ROS2 singleton pointer; the observer/actor-query and
+// apply_ackermann_control slots route back through it (apply_ackermann_control
+// forwards to ROS2::ApplyExtensionAckermann, which stages the command for the
+// game-thread SetFrame drain). The create_publisher / publish / create_subscriber
+// slots forward to the CycloneDDS-linked blob endpoints (Task 13).
 CarlaRos2Host MakeExtensionHost();
 
 // Reclaims host-owned state the extension registered through the vtable, called

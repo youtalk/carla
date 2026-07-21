@@ -145,6 +145,12 @@ void ROS2::SetFrame(uint64_t frame) {
       subscriber->ProcessMessages(callback_it->second);
     }
   }
+  // Apply any Ackermann commands the out-of-tree extension staged since the last
+  // frame. Draining here (game thread) after the subscriber callbacks funnels
+  // extension-sourced control through the same _actor_callbacks visit as the
+  // native subscriber, so ApplyVehicleAckermannControl is reached from exactly
+  // one place regardless of the source.
+  DrainExtensionPendingCommands();
 #if defined(WITH_ROS2_DEMO)
   if (_basic_subscriber) {
     void *actor = _basic_subscriber->GetActor();
@@ -204,8 +210,8 @@ void ROS2::UnregisterSensor(void *actor) {
 }
 
 void ROS2::RegisterVehicle(
-    void *actor, std::string ros_name, std::string frame_id, ActorCallback callback,
-    bool enable_ackermann_control) {
+    void *actor, uint32_t actor_id, std::string ros_name, std::string frame_id,
+    ActorCallback callback, bool enable_ackermann_control) {
   _registrations.insert_or_assign(
       actor, ActorRegistration{.ros_name = ros_name, .frame_id = frame_id,
                                .ros_topic_name = {}, .publish_tf = true});
@@ -215,6 +221,20 @@ void ROS2::RegisterVehicle(
   // the previous callback wired.
   _subscribers.erase(actor);
   _actor_callbacks.insert_or_assign(actor, std::move(callback));
+
+  // Extension-seam id bookkeeping: record both directions of the id<->actor*
+  // mapping and mark this actor as the ego. This is what turns LookupActorId /
+  // GetEgoActorIdForExtension / LookupRosNameById live (they return the
+  // zero/empty sentinel until a vehicle registers) and lets ApplyExtension
+  // Ackermann resolve an actor id back to its actor*. insert_or_assign so a
+  // re-registration of the same actor refreshes rather than duplicates. Locked
+  // against a concurrent foreign-thread read (see _actor_maps_mutex).
+  {
+    std::lock_guard<std::mutex> lock(_actor_maps_mutex);
+    _actor_by_id.insert_or_assign(actor_id, actor);
+    _id_by_actor.insert_or_assign(actor, actor_id);
+    _ego_actor_id = actor_id;
+  }
 
   // The legacy CarlaEgoVehicleControlSubscriber::Init built its topic as
   // "rt/carla/" + [parent + "/"] + name + "/vehicle_control_cmd". With the
@@ -244,6 +264,21 @@ void ROS2::UnregisterVehicle(void *actor) {
   _subscribers.erase(actor);
   _actor_callbacks.erase(actor);
   _vehicle_publishers.erase(actor);
+  // Tear down the extension-seam id bookkeeping this actor owned. Clear
+  // _ego_actor_id only if it still points at THIS actor, so unregistering a
+  // non-ego actor cannot blank a live ego id. Locked against a concurrent
+  // foreign-thread read (see _actor_maps_mutex).
+  {
+    std::lock_guard<std::mutex> lock(_actor_maps_mutex);
+    auto id_it = _id_by_actor.find(actor);
+    if (id_it != _id_by_actor.end()) {
+      if (_ego_actor_id == id_it->second) {
+        _ego_actor_id = 0;
+      }
+      _actor_by_id.erase(id_it->second);
+      _id_by_actor.erase(id_it);
+    }
+  }
   UnregisterSensor(actor);
 }
 
@@ -279,7 +314,9 @@ void ROS2::ClearExtensionObservers() {
 
 uint32_t ROS2::GetEgoActorIdForExtension() const {
   // The hero vehicle is the single RegisterVehicle actor; RegisterVehicle sets
-  // _ego_actor_id in Task 14. Returns 0 ("none registered") until then.
+  // _ego_actor_id in Task 14. Returns 0 ("none registered") until then. Reached
+  // from a foreign thread via the host vtable, so lock (see _actor_maps_mutex).
+  std::lock_guard<std::mutex> lock(_actor_maps_mutex);
   return _ego_actor_id;
 }
 
@@ -292,13 +329,25 @@ const char *ROS2::GetActorRosNameForExtension(uint32_t actor_id) const {
 }
 
 uint32_t ROS2::LookupActorId(void *actor) const {
+  std::lock_guard<std::mutex> lock(_actor_maps_mutex);
   auto it = _id_by_actor.find(actor);
   return it == _id_by_actor.end() ? 0u : it->second;
 }
 
 std::string ROS2::LookupRosNameById(uint32_t actor_id) const {
-  auto it = _actor_by_id.find(actor_id);
-  return it == _actor_by_id.end() ? std::string{} : LookupRosName(it->second);
+  // Resolve id -> actor* under the maps lock and copy the pointer out; release
+  // the lock before LookupRosName (which reads a different, game-thread-owned
+  // map) so we never hold _actor_maps_mutex across unrelated work.
+  void *actor = nullptr;
+  {
+    std::lock_guard<std::mutex> lock(_actor_maps_mutex);
+    auto it = _actor_by_id.find(actor_id);
+    if (it == _actor_by_id.end()) {
+      return std::string{};
+    }
+    actor = it->second;
+  }
+  return LookupRosName(actor);
 }
 
 void ROS2::DispatchVehicleStatusView(
@@ -340,6 +389,70 @@ void ROS2::DispatchVehicleStatusObserversForTest(
   DispatchVehicleStatusView(actor_id, ros_name, CarlaRos2Transform{},
                             velocity_mps, /*lateral_velocity_mps=*/0.0,
                             /*yaw_rate_rps=*/0.0, steer_rad, gear, sim_t);
+}
+
+void ROS2::ApplyExtensionAckermann(uint32_t actor_id, const AckermannControl &cmd) {
+  // Resolve id -> actor* under the maps lock (this can run on the extension's
+  // subscriber-listener thread, concurrently with a game-thread register/
+  // unregister), copy the pointer out, and release the lock before staging.
+  void *actor = nullptr;
+  {
+    std::lock_guard<std::mutex> lock(_actor_maps_mutex);
+    auto it = _actor_by_id.find(actor_id);
+    if (it != _actor_by_id.end()) {
+      actor = it->second;
+    }
+  }
+  if (actor == nullptr) {
+    // Unknown actor: drop. The extension may address an id that has since been
+    // unregistered (or was never the ego); silently ignoring is safer than
+    // fabricating a target. Logged outside the lock; loud in debug.
+    log_debug("ROS2: ApplyExtensionAckermann for unknown actor id", actor_id,
+              "- dropping command");
+    return;
+  }
+  // Stage only — do NOT invoke _actor_callbacks here. The actual actuation
+  // (ActorROS2Handler -> ApplyVehicleAckermannControl) must run on the game
+  // thread, which DrainExtensionPendingCommands does from SetFrame. Last-wins
+  // per actor: a second command for the same actor before the next drain
+  // overwrites the first (single-slot semantics, bounded growth). The lock
+  // guards the map against a concurrent game-thread drain.
+  std::lock_guard<std::mutex> lock(_ext_pending_cmds_mutex);
+  _ext_pending_cmds[actor] = ROS2CallbackData{cmd};
+}
+
+void ROS2::DrainExtensionPendingCommands() {
+  // Swap the staged commands out under the lock, then invoke the callbacks with
+  // the lock released: the callbacks run UE actuation code (game thread) and a
+  // producer on the listener thread must never block on it, nor may that UE code
+  // re-enter the queue under the held lock.
+  std::unordered_map<void *, ROS2CallbackData> pending;
+  {
+    std::lock_guard<std::mutex> lock(_ext_pending_cmds_mutex);
+    pending.swap(_ext_pending_cmds);
+  }
+  for (auto &entry : pending) {
+    auto cb = _actor_callbacks.find(entry.first);
+    if (cb != _actor_callbacks.end()) {
+      cb->second(entry.first, entry.second);
+    }
+  }
+}
+
+void ROS2::RegisterVehicleCallbackForTest(
+    void *actor, uint32_t actor_id, ActorCallback cb) {
+  _actor_callbacks.insert_or_assign(actor, std::move(cb));
+  std::lock_guard<std::mutex> lock(_actor_maps_mutex);
+  _actor_by_id.insert_or_assign(actor_id, actor);
+  _id_by_actor.insert_or_assign(actor, actor_id);
+  _ego_actor_id = actor_id;
+}
+
+void ROS2::DrainActorCallbacksForTest() { DrainExtensionPendingCommands(); }
+
+void ROS2::InjectSubscriberForTest(
+    void *actor, std::shared_ptr<BaseSubscriber> subscriber) {
+  _subscribers.insert({actor, std::move(subscriber)});
 }
 
 void ROS2::AddActorParentRosName(void *actor, void *parent) {
@@ -1195,9 +1308,16 @@ void ROS2::Shutdown() {
   // Shutdown that is not preceded by a teardown.
   _ext_observers.clear();
   _ext_rosname_scratch.clear();
-  _actor_by_id.clear();
-  _id_by_actor.clear();
-  _ego_actor_id = 0;
+  {
+    std::lock_guard<std::mutex> lock(_ext_pending_cmds_mutex);
+    _ext_pending_cmds.clear();
+  }
+  {
+    std::lock_guard<std::mutex> lock(_actor_maps_mutex);
+    _actor_by_id.clear();
+    _id_by_actor.clear();
+    _ego_actor_id = 0;
+  }
   _enabled = false;
 #if defined(WITH_ROS2_DEMO)
   _basic_publisher.reset();

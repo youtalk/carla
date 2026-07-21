@@ -17,6 +17,7 @@
 #include "carla/streaming/detail/Types.h"
 
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -157,9 +158,14 @@ public:
       carla::streaming::detail::stream_id_type id, void *actor);
 
   void UnregisterSensor(void *actor);
+  // actor_id is the CARLA actor id (FCarlaActorView::GetActorId()); RegisterVehicle
+  // records the id<->actor* bookkeeping and marks this actor as the ego so the
+  // extension seam's LookupActorId / GetEgoActorIdForExtension / ApplyExtension
+  // Ackermann resolve it (all return the zero/empty sentinel until a vehicle
+  // registers).
   void RegisterVehicle(
-      void *actor, std::string ros_name, std::string frame_id, ActorCallback callback,
-      bool enable_ackermann_control = false);
+      void *actor, uint32_t actor_id, std::string ros_name, std::string frame_id,
+      ActorCallback callback, bool enable_ackermann_control = false);
   void UnregisterVehicle(void *actor);
 
   // True when RegisterVehicle created the per-vehicle data publishers for
@@ -193,6 +199,34 @@ public:
   void DispatchVehicleStatusObserversForTest(
       uint32_t actor_id, const char *ros_name, double velocity_mps,
       double steer_rad, int32_t gear, double sim_t);
+
+  // Actuation counterpart of the observer seam: the CarlaRos2Host vtable's
+  // apply_ackermann_control slot (ExtensionHost.cpp) routes here. It resolves
+  // `actor_id` to the registered actor and STAGES the command in a small queue
+  // drained inside SetFrame — it never applies inline. That is deliberate: the
+  // extension may call this from its subscriber-listener thread or from on_tick,
+  // whereas the ActorROS2Handler visit it ultimately feeds (ApplyVehicleAckermann
+  // Control) must run on the game thread, exactly like the native control
+  // subscriber whose callback is polled from SetFrame. Staging + the SetFrame
+  // drain is the same structure CarlaEgoVehicleControlSubscriber uses, so the
+  // extension path and the native path share the single _actor_callbacks apply
+  // point and cannot introduce a second, off-thread actuation mechanism. An
+  // unknown actor_id is dropped (loud in debug). The two paths stay mutually
+  // exclusive on the wire (a vehicle subscribes to at most one control topic);
+  // an extension driving actuation simply keeps that native subscriber idle.
+  void ApplyExtensionAckermann(uint32_t actor_id, const AckermannControl &cmd);
+  // Test-only: register an actor's control callback plus the id bookkeeping
+  // (_actor_by_id / _id_by_actor / _ego_actor_id) that RegisterVehicle records
+  // in the live path, so ApplyExtensionAckermann and the VEHICLE_STATUS tap can
+  // resolve the actor without a live spawn.
+  void RegisterVehicleCallbackForTest(void *actor, uint32_t actor_id, ActorCallback cb);
+  // Test-only: run the SetFrame drain of the extension pending-command queue in
+  // isolation (the live drain is one line inside SetFrame).
+  void DrainActorCallbacksForTest();
+  // Test-only: inject a subscriber into the per-actor subscriber map so a test
+  // can drive the real SetFrame two-phase sequence (native subscriber loop, then
+  // extension drain) with a stand-in native source and no live DDS message.
+  void InjectSubscriberForTest(void *actor, std::shared_ptr<BaseSubscriber> subscriber);
 
   // Topic-hierarchy seam used by the plugin's attach_actor path: tells ROS2
   // that `actor` should publish under `parent`'s ros_name prefix. Walking
@@ -341,6 +375,13 @@ private:
   uint32_t LookupActorId(void *actor) const;
   std::string LookupRosNameById(uint32_t actor_id) const;
 
+  // Single drain point for the extension-staged control commands, shared by the
+  // live SetFrame drain and DrainActorCallbacksForTest so the two can never
+  // drift. Invokes each staged command's _actor_callbacks entry (the same visit
+  // the native control subscriber drives) and clears the queue. Runs on the
+  // caller's thread — SetFrame calls it on the game thread.
+  void DrainExtensionPendingCommands();
+
   // Single fill-and-fan-out point for the VEHICLE_STATUS stream, shared by the
   // live ProcessDataFromVehicle tap and DispatchVehicleStatusObserversForTest so
   // the POD layout the two produce can never drift. Runs the synchronous
@@ -429,9 +470,39 @@ private:
   // RegisterVehicle records all three in Task 14; declared here so Tasks 12 and
   // 14 share one definition (Task 12 reads them via LookupActorId /
   // GetEgoActorIdForExtension, which return the zero/empty sentinel until then).
+  //
+  // Guarded by _actor_maps_mutex: the writers (RegisterVehicle / UnregisterVehicle
+  // / Shutdown) run on the game thread, but the extension seam READS these from a
+  // FOREIGN thread by design — ApplyExtensionAckermann, GetEgoActorIdForExtension
+  // and LookupRosNameById are reached from the host vtable, which the extension may
+  // call off the game thread. A concurrent unordered_map::find during a writer's
+  // rehash is UB (unlike the benign scalar read of _ego_actor_id), so EVERY access
+  // to the three members below takes the lock; readers copy the id/pointer out and
+  // release it before doing any further work (never held across a callback or UE
+  // code). mutable so the const readers can lock.
+  mutable std::mutex _actor_maps_mutex;
   uint32_t _ego_actor_id{0};
   std::unordered_map<uint32_t, void *> _actor_by_id;  // id -> actor*
   std::unordered_map<void *, uint32_t> _id_by_actor;  // actor* -> id
+
+  // Extension actuation staging. ApplyExtensionAckermann records the LATEST
+  // command per actor here (last-wins, one slot per actor — mirrors the native
+  // subscriber's single-message slot and bounds growth if the game thread stalls
+  // between drains); SetFrame drains it on the game thread right after the native
+  // subscriber callbacks, so extension-sourced Ackermann commands reach
+  // ApplyVehicleAckermannControl through the exact same _actor_callbacks visit as
+  // the native control subscriber, one frame later. Because the drain runs AFTER
+  // the subscriber loop, an extension command wins over a same-frame native one
+  // for the same actor (pinned by a unit test).
+  //
+  // Guarded by _ext_pending_cmds_mutex because the producer may be the
+  // extension's DDS subscriber-listener thread while the consumer (the SetFrame
+  // drain) is the game thread. The drain swaps the map out under the lock and
+  // invokes the callbacks AFTER releasing it, so no UE actuation code ever runs
+  // while the lock is held (mirrors the FrameToProcessMutex-guarded frame vector
+  // in CarlaEngine::OnPreTick).
+  std::mutex _ext_pending_cmds_mutex;
+  std::unordered_map<void *, ROS2CallbackData> _ext_pending_cmds;
 };
 
 }  // namespace ros2

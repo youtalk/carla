@@ -10,8 +10,9 @@
 // the blob pub/sub slots forward to the CycloneDDS-linked BlobCreate*/BlobPublish
 // functions declared in the DDS-free ExtensionBlobEndpoints.h (defined in the
 // carla-ros2-native TU, resolved at link time). This TU therefore stays DDS-free
-// by contract (see ExtensionHost.h). The apply_ackermann_control slot is still
-// filled from the DDS-linked TU in Task 14; it stays null here.
+// by contract (see ExtensionHost.h). The apply_ackermann_control slot lives here
+// too: it forwards to ROS2::ApplyExtensionAckermann (a ROS2 member, no DDS
+// entity), so it belongs on the DDS-free side with the other host_ctx slots.
 
 #include "carla/ros2/extension/ExtensionHost.h"
 #include "carla/ros2/extension/ExtensionBlobEndpoints.h"
@@ -34,6 +35,24 @@ static uint32_t host_get_ego_actor_id(void *ctx) {
 
 static const char *host_get_actor_ros_name(void *ctx, uint32_t actor_id) {
   return static_cast<ROS2 *>(ctx)->GetActorRosNameForExtension(actor_id);
+}
+
+// Actuation sink: unpack the ABI pod into the internal AckermannControl and hand
+// it to ROS2::ApplyExtensionAckermann, which STAGES it for the game-thread
+// SetFrame drain (see ROS2.h). DDS-free: this routes through the ROS2 singleton,
+// not a DDS entity, so it stays in this TU with the other host_ctx slots.
+static void host_apply_ackermann_control(
+    void *ctx, uint32_t actor_id, const CarlaRos2AckermannPod *pod) {
+  if (pod == nullptr) {
+    return;  // a null pod would dereference; the extension must supply one
+  }
+  AckermannControl cmd;
+  cmd.steer = pod->steer;
+  cmd.steer_speed = pod->steer_speed;
+  cmd.speed = pod->speed;
+  cmd.acceleration = pod->acceleration;
+  cmd.jerk = pod->jerk;
+  static_cast<ROS2 *>(ctx)->ApplyExtensionAckermann(actor_id, cmd);
 }
 
 // Blob pub/sub slots. Unlike the observer/actor slots these need no host_ctx:
@@ -67,7 +86,7 @@ CarlaRos2Host MakeExtensionHost() {
   h.create_publisher = &host_create_publisher;
   h.publish = &host_publish;
   h.create_subscriber = &host_create_subscriber;
-  // apply_ackermann_control is wired from the DDS-linked TU in Task 14; null here.
+  h.apply_ackermann_control = &host_apply_ackermann_control;
   return h;
 }
 
