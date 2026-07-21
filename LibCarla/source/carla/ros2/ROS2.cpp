@@ -177,7 +177,7 @@ void ROS2::SetTimestamp(double timestamp) {
 
 void ROS2::RegisterSensor(
     void *actor, std::string ros_name, std::string frame_id, bool publish_tf,
-    std::string ros_topic_name) {
+    std::string ros_topic_name, PublisherQos qos) {
   // insert_or_assign so re-registering an actor with a new ros_name actually
   // updates the entry; unordered_map::insert would silently keep the stale
   // one.
@@ -186,6 +186,7 @@ void ROS2::RegisterSensor(
   reg.frame_id = std::move(frame_id);
   reg.ros_topic_name = std::move(ros_topic_name);
   reg.publish_tf = publish_tf;
+  reg.qos = qos;
   _registrations.insert_or_assign(actor, std::move(reg));
 }
 
@@ -448,8 +449,17 @@ std::shared_ptr<BasePublisher> ROS2::GetOrCreateSensor(
         resolve("ray_cast");
         resolve("hss_lidar");
       }
+      // Per-sensor QoS (reliability/durability/history depth), parsed from
+      // the ros2_qos_* blueprint attributes in ActorDispatcher::RegisterActor
+      // and threaded through RegisterSensor. Falls back to SensorData()
+      // (best_effort/volatile/depth1) if the actor is somehow unregistered by
+      // the time its first sample arrives — the same pre-QoS-support default
+      // every CarlaPointCloudPublisher subclass had, not the plain Reliable
+      // struct default, so this edge case cannot silently upgrade a lidar to
+      // a subscriber-blocking writer.
+      const PublisherQos qos = reg_it != _registrations.end() ? reg_it->second.qos : PublisherQos::SensorData();
       publisher = std::make_shared<CarlaLidarPublisher>(
-          BuildBaseTopicName(actor), LookupFrameId(actor), has_override);
+          BuildBaseTopicName(actor), LookupFrameId(actor), has_override, qos);
       break;
     }
     case ESensors::LaneInvasionSensor:

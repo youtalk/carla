@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include "carla/ros2/middleware/PublisherQos.h"
 #include "carla/ros2/publishers/BasePublisher.h"
 #include "carla/ros2/publishers/PointCloudFieldsLayout.h"
 
@@ -39,10 +40,14 @@ public:
   // has_topic_override is true when base_topic_name is a verbatim
   // ros_topic_name override (see ROS2::BuildBaseTopicName): Init then
   // publishes on base_topic_name as-is instead of appending "/point_cloud",
-  // since Autoware subscribes to the exact configured topic.
+  // since Autoware subscribes to the exact configured topic. qos is handed
+  // to the middleware verbatim at Init time; it defaults to SensorData()
+  // (best-effort), the behavior every point-cloud publisher had before
+  // per-sensor QoS support was added.
   CarlaPointCloudPublisher(
       std::string base_topic_name, std::string frame_id,
-      bool has_topic_override = false);
+      bool has_topic_override = false,
+      PublisherQos qos = PublisherQos::SensorData());
   ~CarlaPointCloudPublisher() override;
 
   CarlaPointCloudPublisher(const CarlaPointCloudPublisher &) = delete;

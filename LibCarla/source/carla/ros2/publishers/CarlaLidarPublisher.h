@@ -15,9 +15,11 @@ class CarlaLidarPublisher : public CarlaPointCloudPublisher {
 public:
   CarlaLidarPublisher(
       std::string base_topic_name, std::string frame_id,
-      bool has_topic_override = false)
+      bool has_topic_override = false,
+      PublisherQos qos = PublisherQos::SensorData())
     : CarlaPointCloudPublisher(
-          std::move(base_topic_name), std::move(frame_id), has_topic_override) {}
+          std::move(base_topic_name), std::move(frame_id), has_topic_override,
+          std::move(qos)) {}
 
 private:
   [[nodiscard]] std::size_t GetPointSize() const override;

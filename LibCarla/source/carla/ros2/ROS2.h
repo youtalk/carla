@@ -12,6 +12,7 @@
 #include "carla/ros2/ROS2CallbackData.h"
 #include "carla/ros2/middleware/Middleware.h"
 #include "carla/ros2/middleware/MiddlewareConfig.h"
+#include "carla/ros2/middleware/PublisherQos.h"
 #include "carla/streaming/detail/Types.h"
 
 #include <memory>
@@ -89,13 +90,29 @@ public:
   // subscriber when enable_ackermann_control is true, otherwise the direct
   // VehicleControl one. The two control topics are mutually exclusive so they
   // cannot contend frame to frame.
+  // qos is only ever consumed by GetOrCreateSensor's lidar branch today (see
+  // ActorDispatcher's ros2_qos_* attribute parsing, itself lidar-only via
+  // MakeLidarDefinition) — every other sensor type stores it in the
+  // registration but never reads it back. Defaults to SensorData()
+  // (best_effort/volatile/depth1), matching the wire behavior every
+  // CarlaPointCloudPublisher subclass had before per-sensor QoS support
+  // existed, so a caller that omits qos (or a lidar spawned without the
+  // ros2_qos_* attributes) reproduces the pre-QoS-support default rather than
+  // silently upgrading to a subscriber-blocking Reliable writer.
   void RegisterSensor(
       void *actor, std::string ros_name, std::string frame_id, bool publish_tf,
-      std::string ros_topic_name = "");
+      std::string ros_topic_name = "", PublisherQos qos = PublisherQos::SensorData());
 
   // Test-only accessor: BuildBaseTopicName itself stays private since it is an
   // internal composition helper, not part of the actor-registration API.
   std::string BuildBaseTopicNameForTest(void *actor) const { return BuildBaseTopicName(actor); }
+
+  // Test-only accessor: the per-sensor QoS is otherwise only observable via
+  // the wire (DDS discovery), so unit tests read the registration directly.
+  PublisherQos LookupSensorQosForTest(void *actor) const {
+    auto it = _registrations.find(actor);
+    return it == _registrations.end() ? PublisherQos() : it->second.qos;
+  }
 
   void UnregisterSensor(void *actor);
   void RegisterVehicle(
@@ -217,6 +234,10 @@ private:
     std::string frame_id;
     std::string ros_topic_name;   // non-empty => verbatim topic, no composition
     bool publish_tf{true};
+    // Default = Reliable/Volatile/depth1, matching every publisher's
+    // pre-QoS-support behavior. Lidar sensors get their QoS parsed from the
+    // ros2_qos_* blueprint attributes (see ActorDispatcher::RegisterActor).
+    PublisherQos qos{};
   };
 
   // Resolves an actor's `rt/carla/[parent/]ros_name` base topic by walking the

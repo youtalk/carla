@@ -1118,6 +1118,36 @@ void UActorBlueprintFunctionLibrary::MakeLidarDefinition(
   FillIdAndTags(Definition, TEXT("sensor"), TEXT("lidar"), Id);
   AddRecommendedValuesForSensorRoleNames(Definition);
   AddVariationsForSensor(Definition);
+
+  // Per-sensor ROS 2 QoS attributes, lidar-only (high-rate point clouds are
+  // the one publisher family that needs a configurable reliability /
+  // durability / history-depth profile to match AWSIM/tier4 consumers, e.g.
+  // BEST_EFFORT / VOLATILE / depth 5 for LiDAR). Parsed into a
+  // carla::ros2::PublisherQos by ActorDispatcher::RegisterActor. RecommendedValues[0]
+  // is what every spawn transmits unless the caller overrides the attribute,
+  // so it must reproduce the pre-QoS-support wire default exactly
+  // (best_effort/volatile/depth 1, i.e. PublisherQos::SensorData()) — NOT the
+  // struct's own Reliable default, which would silently make a slow ROS 2
+  // subscriber block the lidar's publishing thread.
+  FActorVariation QosReliability;
+  QosReliability.Id = TEXT("ros2_qos_reliability");
+  QosReliability.Type = EActorAttributeType::String;
+  QosReliability.RecommendedValues = { TEXT("best_effort"), TEXT("reliable") };
+  QosReliability.bRestrictToRecommended = false;
+  FActorVariation QosDurability;
+  QosDurability.Id = TEXT("ros2_qos_durability");
+  QosDurability.Type = EActorAttributeType::String;
+  QosDurability.RecommendedValues = { TEXT("volatile"), TEXT("transient_local") };
+  QosDurability.bRestrictToRecommended = false;
+  FActorVariation QosDepth;
+  QosDepth.Id = TEXT("ros2_qos_history_depth");
+  QosDepth.Type = EActorAttributeType::Int;
+  QosDepth.RecommendedValues = { TEXT("1") };
+  QosDepth.bRestrictToRecommended = false;
+  Definition.Variations.Emplace(QosReliability);
+  Definition.Variations.Emplace(QosDurability);
+  Definition.Variations.Emplace(QosDepth);
+
   // Number of channels.
   FActorVariation Channels;
   Channels.Id = TEXT("channels");
