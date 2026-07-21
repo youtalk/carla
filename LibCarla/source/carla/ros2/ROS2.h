@@ -106,9 +106,17 @@ public:
   // existed, so a caller that omits qos (or a lidar spawned without the
   // ros2_qos_* attributes) reproduces the pre-QoS-support default rather than
   // silently upgrading to a subscriber-blocking Reliable writer.
+  // extended_lidar opts a ray-cast / HSS lidar into the 10-float
+  // PointXYZIRCAEDT layout (blueprint attribute ros2_extended_lidar), parsed by
+  // ActorDispatcher::RegisterActor alongside ros_topic_name / qos. Like qos it
+  // is only ever read back by GetOrCreateSensor's lidar branch (passed to the
+  // CarlaLidarPublisher ctor); every other sensor stores it but never uses it.
+  // Defaults to false so an omitted attribute reproduces the 16-byte XYZI wire
+  // layout exactly.
   void RegisterSensor(
       void *actor, std::string ros_name, std::string frame_id, bool publish_tf,
-      std::string ros_topic_name = "", PublisherQos qos = PublisherQos::SensorData());
+      std::string ros_topic_name = "", PublisherQos qos = PublisherQos::SensorData(),
+      bool extended_lidar = false);
 
   // Test-only accessor: BuildBaseTopicName itself stays private since it is an
   // internal composition helper, not part of the actor-registration API.
@@ -119,6 +127,13 @@ public:
   PublisherQos LookupSensorQosForTest(void *actor) const {
     auto it = _registrations.find(actor);
     return it == _registrations.end() ? PublisherQos() : it->second.qos;
+  }
+
+  // Test-only accessor: the extended-lidar flag is otherwise only observable via
+  // the emitted point_step on the wire, so unit tests read the registration.
+  bool LookupSensorExtendedForTest(void *actor) const {
+    auto it = _registrations.find(actor);
+    return it != _registrations.end() && it->second.extended_lidar;
   }
 
   // Test-only accessor: exercises the private GetOrCreateTransformPublisher
@@ -260,7 +275,6 @@ private:
     std::string frame_id;
     std::string ros_topic_name;   // non-empty => verbatim topic, no composition
     bool publish_tf{true};
-<<<<<<< HEAD
     // Defaults to SensorData() (best_effort/volatile/depth1) so this struct
     // default matches RegisterSensor's own default parameter exactly.
     // RegisterVehicle's designated-init (ActorRegistration{...}) never sets
@@ -273,15 +287,10 @@ private:
     // (see ActorDispatcher::RegisterActor); every other sensor/actor type
     // stores this default but never reads it back.
     PublisherQos qos{PublisherQos::SensorData()};
-=======
-    // RegisterSensor always overwrites this (default SensorData()); the
-    // struct default below is never actually observed and exists only so
-    // ActorRegistration is default-constructible. Lidar sensors get their QoS
-    // parsed from the ros2_qos_* blueprint attributes (see
-    // ActorDispatcher::RegisterActor); every other sensor type stores
-    // RegisterSensor's default but never reads it back.
-    PublisherQos qos{};
->>>>>>> e6976992c (feat(ros2): world-global set_publish_tf RPC to suppress CARLA TF)
+    // Opt-in 10-float PointXYZIRCAEDT layout (ros2_extended_lidar). Same
+    // lidar-only lifecycle as qos: set by RegisterSensor, consumed only by
+    // GetOrCreateSensor's lidar branch.
+    bool extended_lidar{false};
   };
 
   // Resolves an actor's `rt/carla/[parent/]ros_name` base topic by walking the

@@ -1154,6 +1154,20 @@ void UActorBlueprintFunctionLibrary::MakeLidarDefinition(
   Definition.Variations.Emplace(QosDurability);
   Definition.Variations.Emplace(QosDepth);
 
+  // Opt-in 10-float PointXYZIRCAEDT layout for the native ROS 2 point cloud:
+  // when true the lidar publishes x,y,z,intensity,return_type,channel,azimuth,
+  // elevation,distance,time_stamp (point_step 32) instead of the default 16-byte
+  // XYZI. Consumed only by the ray_cast / hss_lidar (CarlaLidarPublisher) path
+  // via ActorDispatcher::RegisterActor -> RegisterSensor; harmless on
+  // ray_cast_semantic (which uses a different publisher). Default false keeps
+  // the wire byte-identical to the pre-opt-in layout.
+  FActorVariation ExtendedLidar;
+  ExtendedLidar.Id = TEXT("ros2_extended_lidar");
+  ExtendedLidar.Type = EActorAttributeType::Bool;
+  ExtendedLidar.RecommendedValues = { TEXT("false") };
+  ExtendedLidar.bRestrictToRecommended = false;
+  Definition.Variations.Emplace(ExtendedLidar);
+
   // Number of channels.
   FActorVariation Channels;
   Channels.Id = TEXT("channels");

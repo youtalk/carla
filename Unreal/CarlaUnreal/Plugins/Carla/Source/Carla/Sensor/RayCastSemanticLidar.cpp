@@ -149,7 +149,7 @@ void ARayCastSemanticLidar::SimulateLidar(const float DeltaTime)
         const bool PreprocessResult = RayPreprocessCondition[idxChannel][idxPtsOneLaser];
 
         if (PreprocessResult && ShootLaser(VertAngle, HorizAngle, HitResult, TraceParams)) {
-          WritePointAsync(idxChannel, HitResult);
+          WritePointAsync(idxChannel, HitResult, HorizAngle, VertAngle);
         }
       };
     });
@@ -183,10 +183,10 @@ void ARayCastSemanticLidar::PreprocessRays(uint32_t Channels, uint32_t MaxPoints
   }
 }
 
-void ARayCastSemanticLidar::WritePointAsync(uint32_t channel, FHitResult &detection) {
+void ARayCastSemanticLidar::WritePointAsync(uint32_t channel, FHitResult &detection, float azimuth, float elevation) {
 	TRACE_CPUPROFILER_EVENT_SCOPE_STR(__FUNCTION__);
   DEBUG_ASSERT(GetChannelCount() > channel);
-  RecordedHits[channel].emplace_back(detection);
+  RecordedHits[channel].emplace_back(FRayCastHit{detection, azimuth, elevation});
 }
 
 void ARayCastSemanticLidar::ComputeAndSaveDetections(const FTransform& SensorTransform) {
@@ -198,7 +198,7 @@ void ARayCastSemanticLidar::ComputeAndSaveDetections(const FTransform& SensorTra
   for (auto idxChannel = 0u; idxChannel < Description.Channels; ++idxChannel) {
     for (auto& hit : RecordedHits[idxChannel]) {
       FSemanticDetection detection;
-      ComputeRawDetection(hit, SensorTransform, detection);
+      ComputeRawDetection(hit.HitResult, SensorTransform, detection);
       SemanticLidarData.WritePointSync(detection);
     }
   }

@@ -30,6 +30,18 @@ protected:
   using FSemanticLidarData = carla::sensor::data::SemanticLidarData;
   using FSemanticDetection = carla::sensor::data::SemanticLidarDetection;
 
+  /// A recorded ray hit plus the commanded scan angles (degrees) it was shot
+  /// at. The angles are threaded from SimulateLidar (where they were previously
+  /// computed and discarded) so the opt-in extended (PointXYZIRCAEDT) lidar
+  /// layout can emit per-point azimuth/elevation. The plain and semantic paths
+  /// ignore the angles; only ARayCastLidar / AHSSLidar consume them when their
+  /// LidarData is in extended mode.
+  struct FRayCastHit {
+    FHitResult HitResult;
+    float Azimuth = 0.0f;    // commanded horizontal angle (deg)
+    float Elevation = 0.0f;  // commanded vertical angle (deg), = LaserAngles[channel]
+  };
+
 public:
   static FActorDefinition GetSensorDefinition();
 
@@ -56,8 +68,9 @@ protected:
   /// Compute all raw detection information
   void ComputeRawDetection(const FHitResult &HitInfo, const FTransform &SensorTransf, FSemanticDetection &Detection) const;
 
-  /// Saving the hits the raycast returns per channel
-  void WritePointAsync(uint32_t Channel, FHitResult &Detection);
+  /// Saving the hits the raycast returns per channel, together with the
+  /// commanded scan angles (degrees) of the ray that produced the hit.
+  void WritePointAsync(uint32_t Channel, FHitResult &Detection, float Azimuth, float Elevation);
 
   /// Clear the recorded data structure
   void ResetRecordedHits(uint32_t Channels, uint32_t MaxPointsPerChannel);
@@ -71,9 +84,16 @@ protected:
 
   TArray<float> LaserAngles;
 
-  std::vector<std::vector<FHitResult>> RecordedHits;
+  std::vector<std::vector<FRayCastHit>> RecordedHits;
   std::vector<std::vector<bool>> RayPreprocessCondition;
   std::vector<uint32_t> PointsPerChannel;
+
+  /// Opt-in 10-float PointXYZIRCAEDT layout (blueprint attribute
+  /// ros2_extended_lidar). Read from the actor description in the leaf
+  /// sensors' Set() and forwarded to their LidarData; declared here because
+  /// both ARayCastLidar and AHSSLidar (which own the extended LidarData) derive
+  /// from this base. ARayCastSemanticLidar itself never reads it.
+  bool bExtendedLidar = false;
 
 private:
   FSemanticLidarData SemanticLidarData;

@@ -45,6 +45,34 @@ inline constexpr std::array<PointFieldDescriptor, 4> kLidarFields = {{
     {"intensity", 12u, PointFieldDataType::Float32, 1u},
 }};
 
+// Extended lidar (opt-in ros2_extended_lidar): the canonical 32-byte Autoware
+// PointXYZIRCAEDT layout (autoware/point_types/types.hpp), tier4 SetDataEx
+// order. Point stride = 32 B = sizeof(LidarPointEx) (see ExtendedLidarPoint.h).
+// This is memcpy-compatible with Autoware's PointXYZIRCAEDT struct and MUST
+// stay so: the crop-box filter (first sensing node) runtime-validates the
+// layout and aborts on any other encoding ("The pointcloud layout is not
+// compatible with PointXYZIRCAEDT or PointXYZIRC. Aborting"). intensity and
+// return_type are UINT8, channel UINT16, azimuth/elevation/distance FLOAT32,
+// time_stamp UINT32 (per-point nanoseconds relative to the header stamp).
+// Naturally aligned, tightly packed (no pad); the last field ends exactly at
+// point_step (28 + 4 == 32).
+inline constexpr std::array<PointFieldDescriptor, 10> kLidarFieldsExtended = {{
+    {"x",           0u,  PointFieldDataType::Float32, 1u},
+    {"y",           4u,  PointFieldDataType::Float32, 1u},
+    {"z",           8u,  PointFieldDataType::Float32, 1u},
+    {"intensity",   12u, PointFieldDataType::UInt8,   1u},
+    {"return_type", 13u, PointFieldDataType::UInt8,   1u},
+    {"channel",     14u, PointFieldDataType::UInt16,  1u},
+    {"azimuth",     16u, PointFieldDataType::Float32, 1u},
+    {"elevation",   20u, PointFieldDataType::Float32, 1u},
+    {"distance",    24u, PointFieldDataType::Float32, 1u},
+    {"time_stamp",  28u, PointFieldDataType::UInt32,  1u},
+}};
+
+// Byte stride of one extended point == sizeof(LidarPointEx). Kept beside the
+// field table it describes so the two cannot drift.
+inline constexpr std::uint32_t ExtendedLidarPointStep() { return 32u; }
+
 // Semantic lidar: 6 fields. 4 FLOAT32 + 2 UINT32. Point stride = 24 B =
 // sizeof(sensor::data::SemanticLidarDetection).
 inline constexpr std::array<PointFieldDescriptor, 6> kSemanticLidarFields = {{

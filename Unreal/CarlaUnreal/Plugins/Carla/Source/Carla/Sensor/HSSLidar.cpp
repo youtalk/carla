@@ -42,6 +42,9 @@ AHSSLidar::AHSSLidar(const FObjectInitializer& ObjectInitializer)
 void AHSSLidar::Set(const FActorDescription &ActorDescription)
 {
   ASensor::Set(ActorDescription);
+  // Opt-in 10-float PointXYZIRCAEDT layout (see ARayCastLidar::Set).
+  bExtendedLidar = UActorBlueprintFunctionLibrary::RetrieveActorAttributeToBool(
+      "ros2_extended_lidar", ActorDescription.Variations, false);
   FLidarDescription LidarDescription;
   UActorBlueprintFunctionLibrary::SetLidar(ActorDescription, LidarDescription);
   Set(LidarDescription);
@@ -51,6 +54,8 @@ void AHSSLidar::Set(const FLidarDescription &LidarDescription)
 {
   Description = LidarDescription;
   LidarData = FLidarData(Description.Channels);
+  // FLidarData(Channels) resets the extended flag; re-apply it.
+  LidarData.SetExtended(bExtendedLidar);
   CreateLasers();
   PointsPerChannel.resize(Description.Channels);
 
@@ -163,10 +168,22 @@ void AHSSLidar::ComputeAndSaveDetections(const FTransform& SensorTransform) {
 
   for (auto idxChannel = 0u; idxChannel < Description.Channels; ++idxChannel) {
     for (auto& hit : RecordedHits[idxChannel]) {
-      FDetection Detection = ComputeDetection(hit, SensorTransform);
+      FDetection Detection = ComputeDetection(hit.HitResult, SensorTransform);
       if (PostprocessDetection(Detection))
       {
         LidarData.WritePointSync(Detection);
+        if (bExtendedLidar)
+        {
+          // Extended companion, in lockstep with WritePointSync (see
+          // ARayCastLidar::ComputeAndSaveDetections for the field semantics).
+          const float Distance = Detection.point.Length();
+          LidarData.WritePointExtra(
+              0u,
+              static_cast<uint16_t>(idxChannel),
+              carla::geom::Math::ToRadians(hit.Azimuth),
+              carla::geom::Math::ToRadians(hit.Elevation),
+              Distance);
+        }
 #if WITH_EDITOR
         if(bSavingDataToDisk)
         {
@@ -257,7 +274,7 @@ void AHSSLidar::SimulateLidar(const float DeltaTime)
         const bool PreprocessResult = RayPreprocessCondition[idxChannel][idxPtsOneLaser];
 
         if (PreprocessResult && ShootLaser(VertAngle, HorizAngle, HitResult, TraceParams)) {
-          WritePointAsync(idxChannel, HitResult);
+          WritePointAsync(idxChannel, HitResult, HorizAngle, VertAngle);
         }
       };
     });

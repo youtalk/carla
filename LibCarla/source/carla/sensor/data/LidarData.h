@@ -73,6 +73,28 @@ namespace data {
       }
   };
 
+  /// Per-point companion data for the opt-in extended (PointXYZIRCAEDT) lidar
+  /// layout, stored parallel to LidarData::_points (same point order, 1:1).
+  ///
+  /// LidarDetection itself is deliberately NOT widened: LidarMeasurement
+  /// reinterprets the serialized _points buffer as Array<LidarDetection> under
+  /// a static_assert(sizeof(LidarDetection) == 4*sizeof(float)) (see
+  /// LidarMeasurement.h), and the recorder/replay format is that same 16-byte
+  /// flat stream. Growing LidarDetection would break both. The extra fields the
+  /// extended ROS 2 layout needs — that are not already x/y/z/intensity — live
+  /// here instead and are only ever consumed by ROS2::ProcessDataFromLidar's
+  /// extended branch. return_type is a single-return-model constant (0) carried
+  /// for symmetry; time_stamp is frame-level and set at pack time, so it is not
+  /// stored per point here. Angles are in radians (tier4 convention), distance
+  /// in metres.
+  struct LidarDetectionExtra {
+    uint8_t  return_type = 0u;
+    uint16_t channel = 0u;
+    float    azimuth = 0.0f;
+    float    elevation = 0.0f;
+    float    distance = 0.0f;
+  };
+
   class LidarData : public SemanticLidarData{
 
   public:
@@ -93,6 +115,14 @@ namespace data {
 
       _points.clear();
       _points.reserve(total_points * 4);
+
+      // The extended companion buffer is only populated when the opt-in layout
+      // is active; keep it empty (and allocation-free) otherwise so the default
+      // path pays nothing.
+      _points_extra.clear();
+      if (_extended) {
+        _points_extra.reserve(total_points);
+      }
     }
 
     void WritePointSync(LidarDetection &detection) {
@@ -107,8 +137,29 @@ namespace data {
       DEBUG_ASSERT(false);
     }
 
+    /// Opt-in extended (PointXYZIRCAEDT) layout toggle. Set once at sensor Set()
+    /// time from the ros2_extended_lidar blueprint attribute. When false,
+    /// WritePointExtra is never called and _points_extra stays empty.
+    void SetExtended(bool extended) { _extended = extended; }
+    bool IsExtended() const { return _extended; }
+
+    /// Append the extra fields for the point most recently WritePointSync'd, in
+    /// lockstep with _points. Callers must invoke this exactly once per kept
+    /// detection (after the drop-off postprocess) when IsExtended() is true.
+    void WritePointExtra(uint8_t return_type, uint16_t channel,
+                         float azimuth, float elevation, float distance) {
+      _points_extra.push_back(
+          LidarDetectionExtra{return_type, channel, azimuth, elevation, distance});
+    }
+
   private:
     std::vector<float> _points;
+
+    // Extended-layout state. _points_extra[i] is the companion of the point at
+    // _points[i*4 .. i*4+3]; both are filled in the same order by the sensor's
+    // ComputeAndSaveDetections and consumed together by ProcessDataFromLidar.
+    bool _extended = false;
+    std::vector<LidarDetectionExtra> _points_extra;
 
     friend class s11n::LidarSerializer;
     friend class s11n::LidarHeaderView;
