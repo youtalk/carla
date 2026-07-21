@@ -176,6 +176,11 @@ void UCarlaSettings::LoadSettings()
     {
       ROS2DomainId = DomainIdValue;
     }
+    FString ExtensionValue;
+    if (FParse::Value(FCommandLine::Get(), TEXT("-ros2-extension="), ExtensionValue))
+    {
+      ROS2ExtensionPath = ExtensionValue;
+    }
   }
 }
 

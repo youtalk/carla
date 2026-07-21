@@ -31,6 +31,7 @@
 
 class UCarlaSettings;
 struct FEpisodeSettings;
+class CarlaRos2ExtensionLoader;
 
 class FCarlaEngine : private NonCopyable
 {
@@ -38,6 +39,15 @@ public:
 
   static uint64_t FrameCounter;
 
+  // Declared (rather than left implicit) and defined out-of-line in
+  // CarlaEngine.cpp: ROS2ExtensionLoader is a TUniquePtr to the
+  // forward-declared CarlaRos2ExtensionLoader, so an implicitly-generated
+  // constructor synthesized in some OTHER translation unit that includes
+  // this header but not CarlaRos2ExtensionLoader.h would need that type
+  // complete (to unwind/destroy it on a hypothetical throwing member
+  // constructor) and fail with -Wdelete-incomplete. Defining it in the one
+  // .cpp that has the complete type avoids that entirely.
+  FCarlaEngine();
   ~FCarlaEngine();
 
   void NotifyInitGame(const UCarlaSettings &Settings);
@@ -144,6 +154,12 @@ private:
 
   std::vector<FFrameData> FramesToProcess;
   std::mutex FrameToProcessMutex;
+
+#if defined(WITH_ROS2)
+  // Out-of-tree ROS 2 extension loaded via --ros2-extension=<path>; null when
+  // no path was given or the load was aborted (see CarlaRos2ExtensionLoader.h).
+  TUniquePtr<CarlaRos2ExtensionLoader> ROS2ExtensionLoader;
+#endif
 };
 
 // Note: this has a circular dependency with FCarlaEngine; it must be included late.

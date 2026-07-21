@@ -6,6 +6,7 @@
 
 #include "carla/Logging.h"
 #include "carla/ros2/ROS2.h"
+#include "carla/ros2/extension/CarlaRos2Extension.h"
 #include "carla/geom/GeoLocation.h"
 #include "carla/geom/Vector3D.h"
 #include "carla/rpc/VehicleControl.h"
@@ -1048,6 +1049,27 @@ void ROS2::Shutdown() {
   _basic_publisher.reset();
   _basic_subscriber.reset();
 #endif
+}
+
+// ---------------------------------------------------------------------------
+// Temporary out-of-tree-extension seam stubs (Task 11). MakeExtensionHost()'s
+// real body (Task 12) fills in every CarlaRos2Host vtable slot so the
+// extension can register sensor observers, create publishers/subscribers, and
+// apply ackermann control through the host; TeardownExtensionEndpoints()'s
+// real body (Task 13) reclaims those extension-created endpoints before
+// on_shutdown/dlclose run (see CarlaRos2Extension.h's endpoint-lifetime note).
+// Both are intentionally minimal here: with no extension .so wired up yet,
+// FCarlaEngine's loader keeps a host with only api_version set, and there are
+// no endpoints to tear down. Declared for FCarlaEngine in CarlaEngine.cpp
+// (temporary, until the real ExtensionHost.h lands).
+CarlaRos2Host MakeExtensionHost() {
+  CarlaRos2Host h = {};
+  h.api_version = CARLA_ROS2_EXTENSION_API_VERSION;
+  return h;
+}
+
+void TeardownExtensionEndpoints() {
+  // no-op: no extension-created endpoints exist until Task 13.
 }
 
 }  // namespace ros2
