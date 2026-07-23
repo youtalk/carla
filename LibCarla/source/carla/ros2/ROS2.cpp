@@ -7,6 +7,7 @@
 #include "carla/Logging.h"
 #include "carla/ros2/ROS2.h"
 #include "carla/ros2/extension/CarlaRos2Extension.h"
+#include "carla/ros2/extension/ExtensionTransform.h"
 #include "carla/geom/GeoLocation.h"
 #include "carla/geom/Vector3D.h"
 #include "carla/rpc/VehicleControl.h"
@@ -1179,25 +1180,20 @@ void ROS2::ProcessDataFromVehicle(
   if (!_ext_observers.empty()) {
     _ext_rosname_scratch = LookupRosName(actor);
 
-    // CARLA left-handed centimetres + quaternion (per CarlaRos2Transform's
-    // contract): keep location and orientation in the same raw CARLA frame so
-    // the extension applies its own Autoware conversion consistently. The
-    // quaternion is the CARLA-frame Euler->quaternion of vehicle_transform's
-    // rotation (no handedness flip, unlike the ROS odometry quaternion above).
-    CarlaRos2Transform transform = {};
-    transform.x_cm = vehicle_transform.location.x;
-    transform.y_cm = vehicle_transform.location.y;
-    transform.z_cm = vehicle_transform.location.z;
-    const double half_pitch = vehicle_transform.rotation.pitch * carla::geom::Math::Pi<double>() / 360.0;
-    const double half_yaw = vehicle_transform.rotation.yaw * carla::geom::Math::Pi<double>() / 360.0;
-    const double half_roll = vehicle_transform.rotation.roll * carla::geom::Math::Pi<double>() / 360.0;
-    const double cp = std::cos(half_pitch), sp = std::sin(half_pitch);
-    const double cy = std::cos(half_yaw), sy = std::sin(half_yaw);
-    const double cr = std::cos(half_roll), sr = std::sin(half_roll);
-    transform.qw = cr * cp * cy + sr * sp * sy;
-    transform.qx = sr * cp * cy - cr * sp * sy;
-    transform.qy = cr * sp * cy + sr * cp * sy;
-    transform.qz = cr * cp * sy - sr * sp * cy;
+    // CARLA left-handed CENTIMETRES + quaternion (per CarlaRos2Transform's ABI
+    // contract in CarlaRos2Extension.h): keep location and orientation in the same
+    // raw CARLA frame so the extension applies its own Autoware conversion
+    // consistently. vehicle_transform.location is carla::geom METRES (the odometry
+    // block above writes it straight into a ROS metre pose), so it is scaled to
+    // centimetres inside MakeExtensionTransformMetresDeg -- without that scale the
+    // extension's /100 left the synthesised GNSS pose ~350 m off the ego
+    // (M4-blocker #3, docs/phase-b-report.md). The quaternion is the CARLA-frame
+    // Euler->quaternion of vehicle_transform's rotation (no handedness flip, unlike
+    // the ROS odometry quaternion above).
+    const CarlaRos2Transform transform = MakeExtensionTransformMetresDeg(
+        vehicle_transform.location.x, vehicle_transform.location.y, vehicle_transform.location.z,
+        vehicle_transform.rotation.roll, vehicle_transform.rotation.pitch,
+        vehicle_transform.rotation.yaw);
 
     // Steering: front-wheel road-wheel angle from the UE side (CARLA convention
     // is right-turn-positive on the FL wheel), converted deg->rad and NEGATED so
