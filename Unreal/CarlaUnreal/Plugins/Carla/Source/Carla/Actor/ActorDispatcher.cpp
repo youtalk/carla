@@ -11,12 +11,14 @@
 #include "Carla/Actor/CarlaActorFactory.h"
 #include "Carla/Game/Tagger.h"
 #include "Carla/Vehicle/VehicleControl.h"
+#include "Carla/Vehicle/VehiclePhysicsControl.h"
 
 #include <util/ue-header-guard-begin.h>
 #include "GameFramework/Controller.h"
 #ifdef WITH_ROS2
   #include <util/disable-ue4-macros.h>
   #include "carla/ros2/ROS2.h"
+  #include "carla/rpc/VehiclePhysicsControl.h"
   #include <util/enable-ue4-macros.h>
   #include <variant>
 #endif
@@ -226,11 +228,13 @@ FCarlaActor* UActorDispatcher::RegisterActor(
       // the ROS 2 side, so only request Ackermann when the attribute asks for it.
       bool bIsHero = false;
       bool bEnableAckermannControl = false;
+      std::string RoleName;
       for (auto &&Attr : Description.Variations)
       {
         if (Attr.Key == "role_name" && (Attr.Value.Value == "hero" || Attr.Value.Value == "ego"))
         {
           bIsHero = true;
+          RoleName = std::string(TCHAR_TO_UTF8(*Attr.Value.Value));
         }
         else if (Attr.Key == "ros2_ackermann_control")
         {
@@ -253,6 +257,24 @@ FCarlaActor* UActorDispatcher::RegisterActor(
           std::visit(Handler, Data);
         });
         #endif
+
+        // Publish the latched static description of the vehicle.
+        FVehiclePhysicsControl PhysicsControl;
+        if (View->GetPhysicsControl(PhysicsControl) == ECarlaServerResponse::Success)
+        {
+          ROS2->ProcessVehicleInfo(
+              static_cast<void*>(&Actor),
+              View->GetActorId(),
+              std::string(TCHAR_TO_UTF8(*Description.Id)),
+              RoleName,
+              carla::geom::Transform(View->GetActorGlobalTransform()),
+              carla::rpc::VehiclePhysicsControl::FromFVehiclePhysicsControl(PhysicsControl));
+        }
+        else
+        {
+          UE_LOG(LogCarla, Warning,
+              TEXT("UActorDispatcher: failed to get physics control, skipping ROS2 vehicle info"));
+        }
       }
     }
     #endif

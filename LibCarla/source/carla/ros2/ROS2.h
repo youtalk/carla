@@ -27,6 +27,10 @@ namespace carla {
     class GeoLocation;
     struct Vector3D;
   }
+  namespace rpc {
+    class VehicleControl;
+    struct VehiclePhysicsControl;
+  }
   namespace sensor {
     namespace data {
       struct DVSEvent;
@@ -44,7 +48,11 @@ class BasePublisher;
 class BaseSubscriber;
 class CarlaCameraPublisher;
 class CarlaClockPublisher;
+class CarlaMapPublisher;
 class CarlaTransformPublisher;
+class CarlaOdometryPublisher;
+class CarlaEgoVehicleStatusPublisher;
+class CarlaEgoVehicleInfoPublisher;
 class BasicSubscriber;
 class BasicPublisher;
 
@@ -88,6 +96,10 @@ public:
       void *actor, std::string ros_name, std::string frame_id, ActorCallback callback,
       bool enable_ackermann_control = false);
   void UnregisterVehicle(void *actor);
+
+  // True when RegisterVehicle created the per-vehicle data publishers for
+  // this actor and UnregisterVehicle has not destroyed them yet.
+  bool IsVehicleRegistered(void *actor) const;
 
   // Topic-hierarchy seam used by the plugin's attach_actor path: tells ROS2
   // that `actor` should publish under `parent`'s ros_name prefix. Walking
@@ -170,6 +182,28 @@ public:
       uint32_t other_actor,
       carla::geom::Vector3D impulse,
       void *actor);
+  // Publishes the OpenDRIVE description of the current map as a latched
+  // topic. Called once per episode; re-publishing refreshes the latched
+  // sample after a map change.
+  void ProcessDataFromMap(const std::string &open_drive);
+  // Publishes odometry and vehicle status for a registered vehicle. Called
+  // once per frame.
+  void ProcessDataFromVehicle(
+      void *actor,
+      const carla::geom::Transform vehicle_transform,
+      carla::geom::Vector3D velocity,
+      carla::geom::Vector3D angular_velocity,
+      float delta_seconds,
+      const carla::rpc::VehicleControl &control);
+  // Publishes the latched static description of a registered vehicle.
+  // Called once at registration.
+  void ProcessVehicleInfo(
+      void *actor,
+      uint32_t id,
+      const std::string &type_id,
+      const std::string &role_name,
+      const carla::geom::Transform vehicle_transform,
+      const carla::rpc::VehiclePhysicsControl &physics_control);
 
 private:
   struct ActorRegistration {
@@ -223,6 +257,7 @@ private:
   std::unordered_map<void *, ActorRegistration> _registrations;
   std::unordered_map<void *, std::vector<void *>> _actor_parents;
   std::shared_ptr<CarlaClockPublisher> _clock_publisher;
+  std::shared_ptr<CarlaMapPublisher> _map_publisher;
   std::unordered_map<void *, std::shared_ptr<BasePublisher>> _publishers;
   std::unordered_map<void *, std::shared_ptr<CarlaCameraPublisher>> _camera_publishers;
   std::unordered_map<void *, std::shared_ptr<CarlaTransformPublisher>> _transforms;
@@ -234,6 +269,15 @@ private:
   std::shared_ptr<BasicPublisher> _basic_publisher;
   std::unordered_map<void *, ActorMessageCallback> _actor_message_callbacks;
 #endif
+
+  // Per-vehicle data publishers, created at RegisterVehicle and destroyed at
+  // UnregisterVehicle/Shutdown.
+  struct VehiclePublishers {
+    std::shared_ptr<CarlaOdometryPublisher> odometry;
+    std::shared_ptr<CarlaEgoVehicleStatusPublisher> status;
+    std::shared_ptr<CarlaEgoVehicleInfoPublisher> info;
+  };
+  std::unordered_map<void *, VehiclePublishers> _vehicle_publishers;
 };
 
 }  // namespace ros2

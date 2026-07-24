@@ -63,7 +63,9 @@ CarlaPointCloudPublisher::CarlaPointCloudPublisher(
     std::string base_topic_name, std::string frame_id)
   : BasePublisher(std::move(base_topic_name), std::move(frame_id)),
     _impl(std::make_shared<PublisherImpl<CarlaPointCloudMsgTraits>>()) {
-  if (!_impl->Init(GetBaseTopicName() + "/point_cloud")) {
+  // Best-effort sensor-data QoS: point clouds are large and per-tick, so a
+  // slow subscriber must never block the publishing thread.
+  if (!_impl->Init(GetBaseTopicName() + "/point_cloud", PublisherQos::SensorData())) {
     log_error("CarlaPointCloudPublisher: failed to initialise writer for", GetBaseTopicName());
   }
 }

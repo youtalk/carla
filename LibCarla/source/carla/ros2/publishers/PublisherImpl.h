@@ -29,7 +29,7 @@ class PublisherImpl {
 public:
   using msg_type = typename Traits::msg_type;
 
-  bool Init(std::string topic_name) {
+  bool Init(std::string topic_name, const PublisherQos& publisher_qos = PublisherQos()) {
 #ifdef LIBCARLA_WITH_GTEST
     // A test may inject a fake middleware before Init(); do not overwrite it.
     if (!_middleware) {
@@ -42,7 +42,7 @@ public:
 #ifdef LIBCARLA_WITH_GTEST
     }
 #endif
-    return _middleware->Init(topic_name);
+    return _middleware->Init(topic_name, publisher_qos);
   }
 
   std::string GetTopicName() {
