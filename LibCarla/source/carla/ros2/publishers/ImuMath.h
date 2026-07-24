@@ -27,5 +27,23 @@ inline std::array<float, 4> OrientationFromCompass(float compass) {
   return {c, 0.0f, 0.0f, s};
 }
 
+// UE sensor-frame vector components (left-handed, X forward / Y right / Z up)
+// -> ROS REP-103 sensor-frame components (right-handed, X forward / Y left /
+// Z up). The axis map is diag(1, -1, 1) (Y flips); a POLAR vector (positions,
+// velocities, specific force) converts through it directly.
+inline std::array<float, 3> LinearUEToRos(float x, float y, float z) {
+  return {x, -y, z};
+}
+
+// Same frame change for an ANGULAR velocity. Angular velocity is a
+// PSEUDOVECTOR: under a handedness-changing axis map M it transforms as
+// det(M) * M = -M, so X and Z flip instead of Y. Omitting this (the publisher
+// historically copied UE components verbatim) inverted the fused yaw rate on
+// a flip-mounted IMU and crashed closed-loop driving -- see test_imu_axes.cpp
+// for the measured contract.
+inline std::array<float, 3> AngularUEToRos(float x, float y, float z) {
+  return {-x, y, -z};
+}
+
 }  // namespace ros2
 }  // namespace carla

@@ -44,13 +44,22 @@ bool CarlaIMUPublisher::Write(
   message->header.stamp.nanosec = nanoseconds;
   message->header.frame_id = GetFrameId();
 
-  message->linear_acceleration.x = accel_x;
-  message->linear_acceleration.y = accel_y;
-  message->linear_acceleration.z = accel_z;
+  // The inputs are UE sensor-frame components (left-handed); the wire contract
+  // (sensor_msgs/Imu in the frame named by header.frame_id) is REP-103
+  // right-handed. Convert per vector type -- angular velocity is a pseudovector
+  // and flips a DIFFERENT axis set than the acceleration; conversions + the
+  // measured contract live in ImuMath.h / test_imu_axes.cpp. Shipping the UE
+  // components verbatim inverted the fused yaw rate on the flip-mounted
+  // tamagawa IMU and crashed closed-loop driving (G2, 2026-07-23).
+  const auto accel = LinearUEToRos(accel_x, accel_y, accel_z);
+  message->linear_acceleration.x = accel[0];
+  message->linear_acceleration.y = accel[1];
+  message->linear_acceleration.z = accel[2];
 
-  message->angular_velocity.x = gyro_x;
-  message->angular_velocity.y = gyro_y;
-  message->angular_velocity.z = gyro_z;
+  const auto gyro = AngularUEToRos(gyro_x, gyro_y, gyro_z);
+  message->angular_velocity.x = gyro[0];
+  message->angular_velocity.y = gyro[1];
+  message->angular_velocity.z = gyro[2];
 
   // Yaw-only quaternion from compass heading; math lives in ImuMath.h.
   const auto q = OrientationFromCompass(compass);

@@ -51,23 +51,17 @@ void AInertialMeasurementUnit::SetOwner(AActor* OwningActor)
   Super::SetOwner(OwningActor);
 }
 
-// Returns the angular velocity of Actor, expressed in the frame of Actor
-static FVector FIMU_GetActorAngularVelocityInRadians(
+// Returns the WORLD-frame angular velocity of Actor's physics body. The IMU
+// shares this angular velocity rigidly with its parent; expressing it in the
+// SENSOR frame is done at the caller with the sensor's own global rotation
+// (mirroring ComputeAccelerometer), NOT here with the parent's.
+static FVector FIMU_GetActorGlobalAngularVelocityInRadians(
     AActor &Actor)
 {
   const auto RootComponent = Cast<UPrimitiveComponent>(Actor.GetRootComponent());
-
-  FVector AngularVelocity;
-
-  if (RootComponent != nullptr) {
-      const FQuat ActorGlobalRotation = RootComponent->GetComponentTransform().GetRotation();
-      const FVector GlobalAngularVelocity = RootComponent->GetPhysicsAngularVelocityInRadians();
-      AngularVelocity = ActorGlobalRotation.UnrotateVector(GlobalAngularVelocity);
-  } else {
-      AngularVelocity = FVector::ZeroVector;
-  }
-
-  return AngularVelocity;
+  return RootComponent != nullptr
+      ? RootComponent->GetPhysicsAngularVelocityInRadians()
+      : FVector::ZeroVector;
 }
 
 const carla::geom::Vector3D AInertialMeasurementUnit::ComputeAccelerometerNoise(
@@ -151,14 +145,26 @@ carla::geom::Vector3D AInertialMeasurementUnit::ComputeAccelerometer(
 carla::geom::Vector3D AInertialMeasurementUnit::ComputeGyroscope()
 {
   check(GetOwner() != nullptr);
-  const FVector AngularVelocity =
-      FIMU_GetActorAngularVelocityInRadians(*GetOwner());
+  // The IMU is rigidly attached, so it shares the owner's angular velocity;
+  // the owner's physics body is queried because the sensor's own root
+  // component does not simulate physics.
+  const FVector GlobalAngularVelocity =
+      FIMU_GetActorGlobalAngularVelocityInRadians(*GetOwner());
 
-  const FQuat SensorLocalRotation =
-      RootComponent->GetRelativeTransform().GetRotation();
+  // Express the world-frame rate in THIS sensor's frame via the sensor's
+  // GLOBAL rotation, exactly as ComputeAccelerometer does. The previous
+  // spelling took the OWNER-frame rate and applied RotateVector by the
+  // RELATIVE mount rotation -- Rotate is the inverse of what expressing a
+  // vector in the child frame requires, and the relative transform also
+  // breaks for multi-level attachments. Both errors cancel for a 180-degree
+  // mount flip (self-inverse), which is how this survived until a
+  // flip-mounted IMU (the AWSIM-Labs tamagawa kit frame) was actually fused
+  // by a localization stack.
+  const FQuat SensorGlobalRotation =
+      GetRootComponent()->GetComponentTransform().GetRotation();
 
   const FVector FVectorGyroscope =
-      SensorLocalRotation.RotateVector(AngularVelocity);
+      SensorGlobalRotation.UnrotateVector(GlobalAngularVelocity);
 
   // Cast from FVector to our Vector3D to correctly send the data in rad/s
   // and apply the desired noise function, in this case a normal distribution
