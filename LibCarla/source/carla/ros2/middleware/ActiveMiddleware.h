@@ -28,6 +28,15 @@ namespace ros2 {
 /// left unchanged).
 bool SetActiveMiddleware(Middleware requested);
 
+/// @return The middleware currently selected in the shared library (the value a
+/// prior SetActiveMiddleware() latched; FastDDS before any call). DDS-free — its
+/// definition is compiled into the shared library — so a raw-DDS translation
+/// unit (e.g. the CycloneDDS-only ExtensionBlobEndpoints.cpp) can read the
+/// process middleware selection WITHOUT including MiddlewareFactory.h, whose
+/// vendor includes would pull FastDDS headers that clash with CycloneDDS's
+/// q_protocol.h in the same TU.
+Middleware GetActiveMiddleware();
+
 /// @return A readable list of the middleware implementations compiled into the
 /// shared library. Must be resolved inside the shared library because the
 /// CARLA_ROS2_MIDDLEWARE_* macros are defined only on the carla-ros2-native

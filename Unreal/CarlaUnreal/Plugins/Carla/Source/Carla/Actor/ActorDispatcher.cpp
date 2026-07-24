@@ -313,7 +313,7 @@ FCarlaActor* UActorDispatcher::RegisterActor(
       }
       if (bIsHero)
       {
-        ROS2->RegisterVehicle(static_cast<void*>(&Actor), ResolvedRosName, ResolvedRosName, [ResolvedRosName](void *Actor, carla::ros2::ROS2CallbackData Data) -> void
+        ROS2->RegisterVehicle(static_cast<void*>(&Actor), View->GetActorId(), ResolvedRosName, ResolvedRosName, [ResolvedRosName](void *Actor, carla::ros2::ROS2CallbackData Data) -> void
         {
           AActor *UEActor = reinterpret_cast<AActor *>(Actor);
           ActorROS2Handler Handler(UEActor, ResolvedRosName);

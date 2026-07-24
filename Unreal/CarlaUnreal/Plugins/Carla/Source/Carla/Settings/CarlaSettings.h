@@ -190,5 +190,14 @@ public:
       DisplayName = "ROS2 Domain ID")
   int32 ROS2DomainId = -1;
 
+  /// Path to an out-of-tree ROS 2 extension .so, loaded via --ros2-extension=<path>.
+  /// Empty (the default) means no extension is loaded.
+  UPROPERTY(Category = "Quality Settings/ROS2",
+      BlueprintReadOnly,
+      EditAnywhere,
+      config,
+      DisplayName = "ROS2 Extension Path")
+  FString ROS2ExtensionPath = TEXT("");
+
   /// @}
 };

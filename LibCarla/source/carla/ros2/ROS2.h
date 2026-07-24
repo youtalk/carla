@@ -10,12 +10,14 @@
 #include "carla/BufferView.h"
 #include "carla/geom/Transform.h"
 #include "carla/ros2/ROS2CallbackData.h"
+#include "carla/ros2/extension/CarlaRos2Extension.h"
 #include "carla/ros2/middleware/Middleware.h"
 #include "carla/ros2/middleware/MiddlewareConfig.h"
 #include "carla/ros2/middleware/PublisherQos.h"
 #include "carla/streaming/detail/Types.h"
 
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -156,14 +158,75 @@ public:
       carla::streaming::detail::stream_id_type id, void *actor);
 
   void UnregisterSensor(void *actor);
+  // actor_id is the CARLA actor id (FCarlaActorView::GetActorId()); RegisterVehicle
+  // records the id<->actor* bookkeeping and marks this actor as the ego so the
+  // extension seam's LookupActorId / GetEgoActorIdForExtension / ApplyExtension
+  // Ackermann resolve it (all return the zero/empty sentinel until a vehicle
+  // registers).
   void RegisterVehicle(
-      void *actor, std::string ros_name, std::string frame_id, ActorCallback callback,
-      bool enable_ackermann_control = false);
+      void *actor, uint32_t actor_id, std::string ros_name, std::string frame_id,
+      ActorCallback callback, bool enable_ackermann_control = false);
   void UnregisterVehicle(void *actor);
 
   // True when RegisterVehicle created the per-vehicle data publishers for
   // this actor and UnregisterVehicle has not destroyed them yet.
   bool IsVehicleRegistered(void *actor) const;
+
+  // ---------------------------------------------------------------------------
+  // Out-of-tree ROS 2 extension seam (host side). MakeExtensionHost() in
+  // ExtensionHost.cpp routes the CarlaRos2Host vtable slots into these members.
+  // RegisterExtensionObserver appends a (kind, callback, user) observer that is
+  // invoked SYNCHRONOUSLY on the dispatch thread that produces a sample; the v1
+  // extension observes only CARLA_ROS2_SENSOR_VEHICLE_STATUS (the per-frame ego
+  // status stream tapped inside ProcessDataFromVehicle). The buffers handed to
+  // an observer are valid ONLY for the duration of the call (see the observer
+  // contract in CarlaRos2Extension.h).
+  void RegisterExtensionObserver(int kind, CarlaRos2SensorObserver cb, void *user);
+  // Drops every registered observer. Called by TeardownExtensionEndpoints()
+  // before the extension's on_shutdown/dlclose so a stale function pointer into
+  // an unloaded .so can never be dispatched into.
+  void ClearExtensionObservers();
+  // Returns the CARLA actor id of the single RegisterVehicle (hero) actor, or 0
+  // if none is registered. Backed by _ego_actor_id (populated by
+  // RegisterVehicle).
+  uint32_t GetEgoActorIdForExtension() const;
+  // Resolves an actor id to its registered ros_name. The returned pointer is
+  // owned by ROS2 and valid until the next call on the same thread.
+  const char *GetActorRosNameForExtension(uint32_t actor_id) const;
+  // Test-only driver for the VEHICLE_STATUS dispatch path: builds a POD view
+  // from the given fields and fans it out to the registered observers exactly
+  // like the ProcessDataFromVehicle tap does, without needing a live vehicle.
+  void DispatchVehicleStatusObserversForTest(
+      uint32_t actor_id, const char *ros_name, double velocity_mps,
+      double steer_rad, int32_t gear, double sim_t);
+
+  // Actuation counterpart of the observer seam: the CarlaRos2Host vtable's
+  // apply_ackermann_control slot (ExtensionHost.cpp) routes here. It resolves
+  // `actor_id` to the registered actor and STAGES the command in a small queue
+  // drained inside SetFrame — it never applies inline. That is deliberate: the
+  // extension may call this from its subscriber-listener thread or from on_tick,
+  // whereas the ActorROS2Handler visit it ultimately feeds (ApplyVehicleAckermann
+  // Control) must run on the game thread, exactly like the native control
+  // subscriber whose callback is polled from SetFrame. Staging + the SetFrame
+  // drain is the same structure CarlaEgoVehicleControlSubscriber uses, so the
+  // extension path and the native path share the single _actor_callbacks apply
+  // point and cannot introduce a second, off-thread actuation mechanism. An
+  // unknown actor_id is dropped (loud in debug). The two paths stay mutually
+  // exclusive on the wire (a vehicle subscribes to at most one control topic);
+  // an extension driving actuation simply keeps that native subscriber idle.
+  void ApplyExtensionAckermann(uint32_t actor_id, const AckermannControl &cmd);
+  // Test-only: register an actor's control callback plus the id bookkeeping
+  // (_actor_by_id / _id_by_actor / _ego_actor_id) that RegisterVehicle records
+  // in the live path, so ApplyExtensionAckermann and the VEHICLE_STATUS tap can
+  // resolve the actor without a live spawn.
+  void RegisterVehicleCallbackForTest(void *actor, uint32_t actor_id, ActorCallback cb);
+  // Test-only: run the SetFrame drain of the extension pending-command queue in
+  // isolation (the live drain is one line inside SetFrame).
+  void DrainActorCallbacksForTest();
+  // Test-only: inject a subscriber into the per-actor subscriber map so a test
+  // can drive the real SetFrame two-phase sequence (native subscriber loop, then
+  // extension drain) with a stand-in native source and no live DDS message.
+  void InjectSubscriberForTest(void *actor, std::shared_ptr<BaseSubscriber> subscriber);
 
   // Topic-hierarchy seam used by the plugin's attach_actor path: tells ROS2
   // that `actor` should publish under `parent`'s ros_name prefix. Walking
@@ -251,14 +314,19 @@ public:
   // sample after a map change.
   void ProcessDataFromMap(const std::string &open_drive);
   // Publishes odometry and vehicle status for a registered vehicle. Called
-  // once per frame.
+  // once per frame. front_wheel_steer_angle_deg is the CARLA front-wheel
+  // road-wheel angle in degrees (from ACarlaWheeledVehicle::GetWheelSteerAngle
+  // on the FL wheel); it feeds ONLY the out-of-tree extension VEHICLE_STATUS
+  // tap (converted to Autoware-convention radians there), never the odometry /
+  // status publishers, so it defaults to 0 for callers that do not supply it.
   void ProcessDataFromVehicle(
       void *actor,
       const carla::geom::Transform vehicle_transform,
       carla::geom::Vector3D velocity,
       carla::geom::Vector3D angular_velocity,
       float delta_seconds,
-      const carla::rpc::VehicleControl &control);
+      const carla::rpc::VehicleControl &control,
+      float front_wheel_steer_angle_deg = 0.0f);
   // Publishes the latched static description of a registered vehicle.
   // Called once at registration.
   void ProcessVehicleInfo(
@@ -299,6 +367,28 @@ private:
   std::string LookupRosName(void *actor) const;
   std::string LookupFrameId(void *actor) const;
   std::string BuildParentChain(void *actor) const;
+
+  // Extension-seam actor lookups (only LookupRosName(void*) pre-existed).
+  // Backed by the _id_by_actor / _actor_by_id maps that RegisterVehicle
+  // populates; both return the empty/zero sentinel until then.
+  uint32_t LookupActorId(void *actor) const;
+  std::string LookupRosNameById(uint32_t actor_id) const;
+
+  // Single drain point for the extension-staged control commands, shared by the
+  // live SetFrame drain and DrainActorCallbacksForTest so the two can never
+  // drift. Invokes each staged command's _actor_callbacks entry (the same visit
+  // the native control subscriber drives) and clears the queue. Runs on the
+  // caller's thread — SetFrame calls it on the game thread.
+  void DrainExtensionPendingCommands();
+
+  // Single fill-and-fan-out point for the VEHICLE_STATUS stream, shared by the
+  // live ProcessDataFromVehicle tap and DispatchVehicleStatusObserversForTest so
+  // the POD layout the two produce can never drift. Runs the synchronous
+  // dispatch loop over _ext_observers.
+  void DispatchVehicleStatusView(
+      uint32_t actor_id, const char *ros_name, const CarlaRos2Transform &transform,
+      double velocity_mps, double lateral_velocity_mps, double yaw_rate_rps,
+      double steering_tire_angle_rad, int32_t gear, double sim_time_s);
 
   // Lazy-creates the per-sensor publisher matching `type` (an ESensors enum
   // declared in ROS2.cpp). Returns the BasePublisher pointer; the caller
@@ -360,6 +450,58 @@ private:
     std::shared_ptr<CarlaEgoVehicleInfoPublisher> info;
   };
   std::unordered_map<void *, VehiclePublishers> _vehicle_publishers;
+
+  // Out-of-tree extension seam state (host-owned). An observer is a plain POD
+  // triple; _ext_observers is appended by RegisterExtensionObserver and cleared
+  // by ClearExtensionObservers (teardown). _ext_rosname_scratch gives the
+  // VEHICLE_STATUS tap stable char* storage for the sample's ros_name across
+  // the synchronous dispatch.
+  struct ExtObserver {
+    int kind;
+    CarlaRos2SensorObserver cb;
+    void *user;
+  };
+  std::vector<ExtObserver> _ext_observers;
+  std::string _ext_rosname_scratch;
+
+  // Ego / actor-id bookkeeping shared between vehicle registration and the
+  // extension seam. The ego is the single RegisterVehicle actor, addressed by
+  // the extension via its CARLA actor id. RegisterVehicle records all three;
+  // the extension seam reads them via LookupActorId /
+  // GetEgoActorIdForExtension, which return the zero/empty sentinel until then.
+  //
+  // Guarded by _actor_maps_mutex: the writers (RegisterVehicle / UnregisterVehicle
+  // / Shutdown) run on the game thread, but the extension seam READS these from a
+  // FOREIGN thread by design — ApplyExtensionAckermann, GetEgoActorIdForExtension
+  // and LookupRosNameById are reached from the host vtable, which the extension may
+  // call off the game thread. A concurrent unordered_map::find during a writer's
+  // rehash is UB (unlike the benign scalar read of _ego_actor_id), so EVERY access
+  // to the three members below takes the lock; readers copy the id/pointer out and
+  // release it before doing any further work (never held across a callback or UE
+  // code). mutable so the const readers can lock.
+  mutable std::mutex _actor_maps_mutex;
+  uint32_t _ego_actor_id{0};
+  std::unordered_map<uint32_t, void *> _actor_by_id;  // id -> actor*
+  std::unordered_map<void *, uint32_t> _id_by_actor;  // actor* -> id
+
+  // Extension actuation staging. ApplyExtensionAckermann records the LATEST
+  // command per actor here (last-wins, one slot per actor — mirrors the native
+  // subscriber's single-message slot and bounds growth if the game thread stalls
+  // between drains); SetFrame drains it on the game thread right after the native
+  // subscriber callbacks, so extension-sourced Ackermann commands reach
+  // ApplyVehicleAckermannControl through the exact same _actor_callbacks visit as
+  // the native control subscriber, one frame later. Because the drain runs AFTER
+  // the subscriber loop, an extension command wins over a same-frame native one
+  // for the same actor (pinned by a unit test).
+  //
+  // Guarded by _ext_pending_cmds_mutex because the producer may be the
+  // extension's DDS subscriber-listener thread while the consumer (the SetFrame
+  // drain) is the game thread. The drain swaps the map out under the lock and
+  // invokes the callbacks AFTER releasing it, so no UE actuation code ever runs
+  // while the lock is held (mirrors the FrameToProcessMutex-guarded frame vector
+  // in CarlaEngine::OnPreTick).
+  std::mutex _ext_pending_cmds_mutex;
+  std::unordered_map<void *, ROS2CallbackData> _ext_pending_cmds;
 };
 
 }  // namespace ros2

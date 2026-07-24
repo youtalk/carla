@@ -6,6 +6,8 @@
 
 #include "carla/Logging.h"
 #include "carla/ros2/ROS2.h"
+#include "carla/ros2/extension/CarlaRos2Extension.h"
+#include "carla/ros2/extension/ExtensionTransform.h"
 #include "carla/geom/GeoLocation.h"
 #include "carla/geom/Vector3D.h"
 #include "carla/rpc/VehicleControl.h"
@@ -144,6 +146,12 @@ void ROS2::SetFrame(uint64_t frame) {
       subscriber->ProcessMessages(callback_it->second);
     }
   }
+  // Apply any Ackermann commands the out-of-tree extension staged since the last
+  // frame. Draining here (game thread) after the subscriber callbacks funnels
+  // extension-sourced control through the same _actor_callbacks visit as the
+  // native subscriber, so ApplyVehicleAckermannControl is reached from exactly
+  // one place regardless of the source.
+  DrainExtensionPendingCommands();
 #if defined(WITH_ROS2_DEMO)
   if (_basic_subscriber) {
     void *actor = _basic_subscriber->GetActor();
@@ -203,8 +211,8 @@ void ROS2::UnregisterSensor(void *actor) {
 }
 
 void ROS2::RegisterVehicle(
-    void *actor, std::string ros_name, std::string frame_id, ActorCallback callback,
-    bool enable_ackermann_control) {
+    void *actor, uint32_t actor_id, std::string ros_name, std::string frame_id,
+    ActorCallback callback, bool enable_ackermann_control) {
   _registrations.insert_or_assign(
       actor, ActorRegistration{.ros_name = ros_name, .frame_id = frame_id,
                                .ros_topic_name = {}, .publish_tf = true});
@@ -214,6 +222,20 @@ void ROS2::RegisterVehicle(
   // the previous callback wired.
   _subscribers.erase(actor);
   _actor_callbacks.insert_or_assign(actor, std::move(callback));
+
+  // Extension-seam id bookkeeping: record both directions of the id<->actor*
+  // mapping and mark this actor as the ego. This is what turns LookupActorId /
+  // GetEgoActorIdForExtension / LookupRosNameById live (they return the
+  // zero/empty sentinel until a vehicle registers) and lets ApplyExtension
+  // Ackermann resolve an actor id back to its actor*. insert_or_assign so a
+  // re-registration of the same actor refreshes rather than duplicates. Locked
+  // against a concurrent foreign-thread read (see _actor_maps_mutex).
+  {
+    std::lock_guard<std::mutex> lock(_actor_maps_mutex);
+    _actor_by_id.insert_or_assign(actor_id, actor);
+    _id_by_actor.insert_or_assign(actor, actor_id);
+    _ego_actor_id = actor_id;
+  }
 
   // The legacy CarlaEgoVehicleControlSubscriber::Init built its topic as
   // "rt/carla/" + [parent + "/"] + name + "/vehicle_control_cmd". With the
@@ -243,11 +265,207 @@ void ROS2::UnregisterVehicle(void *actor) {
   _subscribers.erase(actor);
   _actor_callbacks.erase(actor);
   _vehicle_publishers.erase(actor);
+  // Tear down the extension-seam id bookkeeping this actor owned. Clear
+  // _ego_actor_id only if it still points at THIS actor, so unregistering a
+  // non-ego actor cannot blank a live ego id. Locked against a concurrent
+  // foreign-thread read (see _actor_maps_mutex).
+  {
+    std::lock_guard<std::mutex> lock(_actor_maps_mutex);
+    auto id_it = _id_by_actor.find(actor);
+    if (id_it != _id_by_actor.end()) {
+      if (_ego_actor_id == id_it->second) {
+        _ego_actor_id = 0;
+      }
+      _actor_by_id.erase(id_it->second);
+      _id_by_actor.erase(id_it);
+    }
+  }
+  // Drop any staged-but-undrained extension Ackermann command for this actor
+  // too: ApplyExtensionAckermann can stage into _ext_pending_cmds from the
+  // extension's subscriber-listener thread right up until this despawn, and
+  // without this erase a stale entry would survive keyed on a now-dangling
+  // actor pointer, then get applied against whatever unrelated actor is
+  // allocated at that same address later (or found and visited via a stale
+  // _actor_callbacks-adjacent lookup). Locked against the same producer/
+  // consumer race DrainExtensionPendingCommands guards against.
+  {
+    std::lock_guard<std::mutex> lock(_ext_pending_cmds_mutex);
+    _ext_pending_cmds.erase(actor);
+  }
   UnregisterSensor(actor);
 }
 
 bool ROS2::IsVehicleRegistered(void *actor) const {
   return _vehicle_publishers.find(actor) != _vehicle_publishers.end();
+}
+
+// ---------------------------------------------------------------------------
+// Out-of-tree ROS 2 extension seam (host side). These are the concrete targets
+// the CarlaRos2Host vtable slots (built in ExtensionHost.cpp) route through.
+
+void ROS2::RegisterExtensionObserver(int kind, CarlaRos2SensorObserver cb, void *user) {
+  if (cb == nullptr) {
+    return;  // a null callback would crash the synchronous dispatch loop
+  }
+  // Idempotency: registering the exact same (kind, cb, user) triple twice would
+  // dispatch the sample into that observer twice per frame. Skip the duplicate
+  // and warn — a re-Load of the same extension (or a double register_observer
+  // in on_init) is the likely cause, and silent double-dispatch is a subtle bug.
+  for (const auto &o : _ext_observers) {
+    if (o.kind == kind && o.cb == cb && o.user == user) {
+      log_warning("ROS2: extension observer already registered for kind", kind,
+                  "- ignoring duplicate registration");
+      return;
+    }
+  }
+  _ext_observers.push_back(ExtObserver{kind, cb, user});
+}
+
+void ROS2::ClearExtensionObservers() {
+  _ext_observers.clear();
+}
+
+uint32_t ROS2::GetEgoActorIdForExtension() const {
+  // The hero vehicle is the single RegisterVehicle actor; RegisterVehicle sets
+  // _ego_actor_id. Returns 0 ("none registered") until then. Reached from a
+  // foreign thread via the host vtable, so lock (see _actor_maps_mutex).
+  std::lock_guard<std::mutex> lock(_actor_maps_mutex);
+  return _ego_actor_id;
+}
+
+const char *ROS2::GetActorRosNameForExtension(uint32_t actor_id) const {
+  // thread_local so the returned char* stays valid until this thread's next
+  // call, without the const method mutating shared ROS2 state.
+  static thread_local std::string name;
+  name = LookupRosNameById(actor_id);
+  return name.c_str();
+}
+
+uint32_t ROS2::LookupActorId(void *actor) const {
+  std::lock_guard<std::mutex> lock(_actor_maps_mutex);
+  auto it = _id_by_actor.find(actor);
+  return it == _id_by_actor.end() ? 0u : it->second;
+}
+
+std::string ROS2::LookupRosNameById(uint32_t actor_id) const {
+  // Resolve id -> actor* under the maps lock and copy the pointer out; release
+  // the lock before LookupRosName (which reads a different, game-thread-owned
+  // map) so we never hold _actor_maps_mutex across unrelated work.
+  void *actor = nullptr;
+  {
+    std::lock_guard<std::mutex> lock(_actor_maps_mutex);
+    auto it = _actor_by_id.find(actor_id);
+    if (it == _actor_by_id.end()) {
+      return std::string{};
+    }
+    actor = it->second;
+  }
+  return LookupRosName(actor);
+}
+
+void ROS2::DispatchVehicleStatusView(
+    uint32_t actor_id, const char *ros_name, const CarlaRos2Transform &transform,
+    double velocity_mps, double lateral_velocity_mps, double yaw_rate_rps,
+    double steering_tire_angle_rad, int32_t gear, double sim_time_s) {
+  // Single point that fills the VEHICLE_STATUS view + sample and fans it out, so
+  // the live ProcessDataFromVehicle tap and the test driver can never drift. The
+  // view and its ros_name buffer are valid ONLY for this synchronous dispatch
+  // (see the observer contract in CarlaRos2Extension.h).
+  CarlaRos2VehicleStatusView view = {};
+  view.actor_id = actor_id;
+  view.ros_name = ros_name;
+  view.transform = transform;
+  view.velocity_mps = velocity_mps;
+  view.lateral_velocity_mps = lateral_velocity_mps;
+  view.yaw_rate_rps = yaw_rate_rps;
+  view.steering_tire_angle_rad = steering_tire_angle_rad;
+  view.gear = gear;
+  view.sim_time_s = sim_time_s;
+  CarlaRos2SensorSample sample = {};
+  sample.kind = CARLA_ROS2_SENSOR_VEHICLE_STATUS;
+  sample.actor_id = actor_id;
+  sample.ros_name = ros_name;
+  sample.data = &view;
+  sample.data_size = sizeof(view);
+  for (auto &o : _ext_observers) {
+    if (o.kind == CARLA_ROS2_SENSOR_VEHICLE_STATUS) {
+      o.cb(o.user, &sample);
+    }
+  }
+}
+
+void ROS2::DispatchVehicleStatusObserversForTest(
+    uint32_t actor_id, const char *ros_name, double velocity_mps,
+    double steer_rad, int32_t gear, double sim_t) {
+  // Thin wrapper over the shared fill/dispatch helper (zero transform + zero
+  // lateral/yaw, which the live tap computes from real kinematics).
+  DispatchVehicleStatusView(actor_id, ros_name, CarlaRos2Transform{},
+                            velocity_mps, /*lateral_velocity_mps=*/0.0,
+                            /*yaw_rate_rps=*/0.0, steer_rad, gear, sim_t);
+}
+
+void ROS2::ApplyExtensionAckermann(uint32_t actor_id, const AckermannControl &cmd) {
+  // Resolve id -> actor* under the maps lock (this can run on the extension's
+  // subscriber-listener thread, concurrently with a game-thread register/
+  // unregister), copy the pointer out, and release the lock before staging.
+  void *actor = nullptr;
+  {
+    std::lock_guard<std::mutex> lock(_actor_maps_mutex);
+    auto it = _actor_by_id.find(actor_id);
+    if (it != _actor_by_id.end()) {
+      actor = it->second;
+    }
+  }
+  if (actor == nullptr) {
+    // Unknown actor: drop. The extension may address an id that has since been
+    // unregistered (or was never the ego); silently ignoring is safer than
+    // fabricating a target. Logged outside the lock; loud in debug.
+    log_debug("ROS2: ApplyExtensionAckermann for unknown actor id", actor_id,
+              "- dropping command");
+    return;
+  }
+  // Stage only — do NOT invoke _actor_callbacks here. The actual actuation
+  // (ActorROS2Handler -> ApplyVehicleAckermannControl) must run on the game
+  // thread, which DrainExtensionPendingCommands does from SetFrame. Last-wins
+  // per actor: a second command for the same actor before the next drain
+  // overwrites the first (single-slot semantics, bounded growth). The lock
+  // guards the map against a concurrent game-thread drain.
+  std::lock_guard<std::mutex> lock(_ext_pending_cmds_mutex);
+  _ext_pending_cmds[actor] = ROS2CallbackData{cmd};
+}
+
+void ROS2::DrainExtensionPendingCommands() {
+  // Swap the staged commands out under the lock, then invoke the callbacks with
+  // the lock released: the callbacks run UE actuation code (game thread) and a
+  // producer on the listener thread must never block on it, nor may that UE code
+  // re-enter the queue under the held lock.
+  std::unordered_map<void *, ROS2CallbackData> pending;
+  {
+    std::lock_guard<std::mutex> lock(_ext_pending_cmds_mutex);
+    pending.swap(_ext_pending_cmds);
+  }
+  for (auto &entry : pending) {
+    auto cb = _actor_callbacks.find(entry.first);
+    if (cb != _actor_callbacks.end()) {
+      cb->second(entry.first, entry.second);
+    }
+  }
+}
+
+void ROS2::RegisterVehicleCallbackForTest(
+    void *actor, uint32_t actor_id, ActorCallback cb) {
+  _actor_callbacks.insert_or_assign(actor, std::move(cb));
+  std::lock_guard<std::mutex> lock(_actor_maps_mutex);
+  _actor_by_id.insert_or_assign(actor_id, actor);
+  _id_by_actor.insert_or_assign(actor, actor_id);
+  _ego_actor_id = actor_id;
+}
+
+void ROS2::DrainActorCallbacksForTest() { DrainExtensionPendingCommands(); }
+
+void ROS2::InjectSubscriberForTest(
+    void *actor, std::shared_ptr<BaseSubscriber> subscriber) {
+  _subscribers.insert({actor, std::move(subscriber)});
 }
 
 void ROS2::AddActorParentRosName(void *actor, void *parent) {
@@ -909,7 +1127,8 @@ void ROS2::ProcessDataFromVehicle(
     carla::geom::Vector3D velocity,
     carla::geom::Vector3D angular_velocity,
     float delta_seconds,
-    const carla::rpc::VehicleControl &control) {
+    const carla::rpc::VehicleControl &control,
+    float front_wheel_steer_angle_deg) {
   if (!_enabled) {
     return;
   }
@@ -951,6 +1170,53 @@ void ROS2::ProcessDataFromVehicle(
   it->second.status->Write(
       _seconds, _nanoseconds, "map", orientation, ros_velocity, delta_seconds, ros_control);
   it->second.status->Publish();
+
+  // Out-of-tree extension tap: fan the same per-frame ego state out to any
+  // registered VEHICLE_STATUS observer. Skipped entirely when no extension has
+  // registered, so a non-extension run pays only a vector empty-check.
+  // _ext_rosname_scratch gives ros_name stable char* storage for the duration
+  // of the synchronous dispatch (see the observer contract in
+  // CarlaRos2Extension.h).
+  if (!_ext_observers.empty()) {
+    _ext_rosname_scratch = LookupRosName(actor);
+
+    // CARLA left-handed CENTIMETRES + quaternion (per CarlaRos2Transform's ABI
+    // contract in CarlaRos2Extension.h): keep location and orientation in the same
+    // raw CARLA frame so the extension applies its own Autoware conversion
+    // consistently. vehicle_transform.location is carla::geom METRES (the odometry
+    // block above writes it straight into a ROS metre pose), so it is scaled to
+    // centimetres inside MakeExtensionTransformMetresDeg -- without that scale the
+    // extension's /100 left the synthesised GNSS pose ~350 m off the ego. The
+    // quaternion is the CARLA-frame Euler->quaternion of vehicle_transform's
+    // rotation (no handedness flip, unlike the ROS odometry quaternion above).
+    const CarlaRos2Transform transform = MakeExtensionTransformMetresDeg(
+        vehicle_transform.location.x, vehicle_transform.location.y, vehicle_transform.location.z,
+        vehicle_transform.rotation.roll, vehicle_transform.rotation.pitch,
+        vehicle_transform.rotation.yaw);
+
+    // Steering: front-wheel road-wheel angle from the UE side (CARLA convention
+    // is right-turn-positive on the FL wheel), converted deg->rad and NEGATED so
+    // the view carries the Autoware convention (left-positive) directly — this
+    // matches how the PythonAPI/ros-bridge negates CARLA's FL-wheel angle.
+    // CAVEAT (this build): ACarlaWheeledVehicle::GetWheelSteerAngle is currently
+    // engine-stubbed to return 0.0 on UE5/Chaos (the real readback is #if 0'd,
+    // "@CARLAUE5 ToDo"), so front_wheel_steer_angle_deg is 0 until that stub is
+    // implemented. The seam and sign are wired correctly for when it is; this is
+    // a documented engine limitation, not a silent host-side zero.
+    const double steering_tire_angle_rad =
+        -static_cast<double>(front_wheel_steer_angle_deg) * carla::geom::Math::Pi<double>() / 180.0;
+
+    DispatchVehicleStatusView(
+        LookupActorId(actor),  // 0 until RegisterVehicle records it
+        _ext_rosname_scratch.c_str(),
+        transform,
+        body_velocity.x,           // signed longitudinal body-frame speed (m/s)
+        body_velocity.y,           // lateral body-frame velocity (m/s)
+        ros_angular_velocity.z,    // yaw rate (rad/s)
+        steering_tire_angle_rad,
+        control.gear,
+        static_cast<double>(_seconds) + _nanoseconds * 1e-9);
+  }
 }
 
 void ROS2::ProcessVehicleInfo(
@@ -1043,6 +1309,22 @@ void ROS2::Shutdown() {
   _registrations.clear();
   _actor_parents.clear();
   _clock_publisher.reset();
+  // Extension seam: drop any still-registered observers and the actor-id
+  // bookkeeping. TeardownExtensionEndpoints() already clears the observers
+  // before dlclose on the normal path; this is the belt-and-braces reset for a
+  // Shutdown that is not preceded by a teardown.
+  _ext_observers.clear();
+  _ext_rosname_scratch.clear();
+  {
+    std::lock_guard<std::mutex> lock(_ext_pending_cmds_mutex);
+    _ext_pending_cmds.clear();
+  }
+  {
+    std::lock_guard<std::mutex> lock(_actor_maps_mutex);
+    _actor_by_id.clear();
+    _id_by_actor.clear();
+    _ego_actor_id = 0;
+  }
   _enabled = false;
 #if defined(WITH_ROS2_DEMO)
   _basic_publisher.reset();

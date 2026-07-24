@@ -7,6 +7,7 @@
 #include "Carla/Game/CarlaEngine.h"
 #include "Carla.h"
 #include "Carla/Game/CarlaEpisode.h"
+#include "Carla/Game/CarlaRos2ExtensionLoader.h"
 #include "Carla/Game/CarlaStaticDelegates.h"
 #include "Carla/Game/CarlaStatics.h"
 #include "Carla/Lights/CarlaLightSubsystem.h"
@@ -15,6 +16,7 @@
 #include "Carla/Settings/EpisodeSettings.h"
 #include "Carla/MapGen/LargeMapManager.h"
 #include "Carla/OpenDrive/OpenDrive.h"
+#include "Carla/Vehicle/CarlaWheeledVehicle.h"
 #include "Carla/Vehicle/VehicleControl.h"
 
 #include <util/disable-ue4-macros.h>
@@ -24,6 +26,7 @@
 #include <carla/multigpu/secondary.h>
 #include <carla/multigpu/secondaryCommands.h>
 #include <carla/ros2/ROS2.h>
+#include <carla/ros2/extension/ExtensionHost.h>
 #include <carla/ros2/middleware/Middleware.h>
 #include <carla/ros2/middleware/MiddlewareConfig.h>
 #include <carla/ros2/middleware/ActiveMiddleware.h>
@@ -39,6 +42,12 @@
 #include <util/ue-header-guard-end.h>
 
 #include <thread>
+
+// The host-side extension seam (MakeExtensionHost() builds the CarlaRos2Host
+// vtable handed to the extension at Load() time; TeardownExtensionEndpoints()
+// reclaims the host-owned observer registry and the DDS reader/writers
+// before on_shutdown/dlclose run) is declared in
+// <carla/ros2/extension/ExtensionHost.h>, included above.
 
 // =============================================================================
 // -- Static local methods -----------------------------------------------------
@@ -67,11 +76,25 @@ static void FCarlaEngine_SetFixedDeltaSeconds(TOptional<double> FixedDeltaSecond
 // -- FCarlaEngine -------------------------------------------------------------
 // =============================================================================
 
+// Out-of-line (not = default in the header) so every other translation unit
+// only ever sees the declaration; see the header's comment on why this must
+// stay defined only here, where CarlaRos2ExtensionLoader.h is complete.
+FCarlaEngine::FCarlaEngine() = default;
+
 FCarlaEngine::~FCarlaEngine()
 {
   if (bIsRunning)
   {
     #if defined(WITH_ROS2)
+    if (ROS2ExtensionLoader)
+    {
+      // Delete extension-created DDS readers/writers BEFORE on_shutdown frees the
+      // extension state and BEFORE dlclose unloads its code, so no data-available
+      // listener fires into a dangling br->user / br->cb (60 Hz control_cmd race).
+      carla::ros2::TeardownExtensionEndpoints();
+      ROS2ExtensionLoader->Unload();   // runs ext.on_shutdown then dlclose
+      ROS2ExtensionLoader.Reset();
+    }
     auto ROS2 = carla::ros2::ROS2::GetInstance();
     if (ROS2->IsEnabled())
       ROS2->Shutdown();
@@ -263,6 +286,42 @@ void FCarlaEngine::NotifyInitGame(const UCarlaSettings &Settings)
         // created. Gated on Settings.ROS2 so non-ROS2 runs never force every stream
         // active (which would make every sensor produce data each tick).
         Server.GetStreamingServer().SetROS2TopicVisibilityDefaultEnabled(Settings.ROS2TopicVisibility);
+
+        // Load an out-of-tree ROS2 extension, if one was requested. Must happen
+        // AFTER ROS2->Enable() succeeded above: the participant (and its clock
+        // publisher) already exists, so the host vtable handed to the extension
+        // is fully usable. Any failure aborts the load loudly; ROS2 itself keeps
+        // running without the extension.
+        if (!Settings.ROS2ExtensionPath.IsEmpty())
+        {
+          if (ROS2ExtensionLoader)
+          {
+            // This whole ROS2-setup block re-runs on every NotifyInitGame call,
+            // not just the first (it sits outside the `if (!bIsRunning)` guard
+            // above, so a map/episode reload gets here again). Do NOT
+            // reconstruct: move-assigning a fresh TUniquePtr here would
+            // silently destroy the previous CarlaRos2ExtensionLoader
+            // (on_shutdown + dlclose, via ~CarlaRos2ExtensionLoader) WITHOUT
+            // first calling carla::ros2::TeardownExtensionEndpoints() the way
+            // ~FCarlaEngine does — violating the ABI header's documented
+            // teardown order the moment Tasks 12/13 give the extension real
+            // endpoints to create. Instead, the already-loaded extension
+            // simply persists across the reload. Whether its endpoints should
+            // be torn down/recreated per map change is deliberately deferred
+            // to Tasks 12/13's endpoint lifecycle work.
+            UE_LOG(LogCarla, Log,
+                TEXT("ROS2 extension: already loaded, persisting across episode reload"));
+          }
+          else
+          {
+            ROS2ExtensionLoader = MakeUnique<CarlaRos2ExtensionLoader>();
+            const CarlaRos2Host Host = carla::ros2::MakeExtensionHost();
+            if (!ROS2ExtensionLoader->Load(Settings.ROS2ExtensionPath, Host))
+            {
+              ROS2ExtensionLoader.Reset();   // load failed loudly; ROS2 stays up
+            }
+          }
+        }
       }
     }
   } else {
@@ -435,6 +494,10 @@ void FCarlaEngine::OnPostTick(UWorld *World, ELevelTick TickType, float DeltaSec
     CurrentEpisode->GetSensorManager().PostPhysTick(World, TickType, DeltaSeconds);
     #if defined(WITH_ROS2)
     PublishROS2VehicleState(DeltaSeconds);
+    if (ROS2ExtensionLoader && World)
+    {
+      ROS2ExtensionLoader->Tick(World->GetTimeSeconds());
+    }
     #endif
     ResetSimulationState();
   }
@@ -476,13 +539,27 @@ void FCarlaEngine::PublishROS2VehicleState(float DeltaSeconds)
     FVehicleControl VehicleControl;
     View->GetVehicleControl(VehicleControl);
 
+    // Front-wheel road-wheel angle (degrees, CARLA convention) for the
+    // out-of-tree extension's VEHICLE_STATUS tap; ProcessDataFromVehicle
+    // converts it to Autoware-convention radians. NOTE: on this UE5/Chaos build
+    // ACarlaWheeledVehicle::GetWheelSteerAngle is engine-stubbed to 0.0 (the
+    // Chaos readback is #if 0'd, "@CARLAUE5 ToDo"), so this is 0 until that stub
+    // is implemented — the seam is wired for when it is.
+    float FrontWheelSteerAngleDeg = 0.0f;
+    if (ACarlaWheeledVehicle *WheeledVehicle = Cast<ACarlaWheeledVehicle>(Actor))
+    {
+      FrontWheelSteerAngleDeg =
+          WheeledVehicle->GetWheelSteerAngle(EVehicleWheelLocation::FL_Wheel);
+    }
+
     ROS2->ProcessDataFromVehicle(
         static_cast<void*>(Actor),
         Transform,
         carla::geom::Vector3D(Velocity.X, Velocity.Y, Velocity.Z),
         carla::geom::Vector3D(AngularVelocity.X, AngularVelocity.Y, AngularVelocity.Z),
         DeltaSeconds,
-        carla::rpc::VehicleControl(VehicleControl));
+        carla::rpc::VehicleControl(VehicleControl),
+        FrontWheelSteerAngleDeg);
   }
 }
 #endif
