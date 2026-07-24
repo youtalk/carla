@@ -516,6 +516,15 @@ if (BUILD_LIBCARLA_TESTS)
         libcarla_test_server PRIVATE
         ${CARLA_ROS2_NATIVE_INSTALL_PATH}/lib/libfastcdr.so
         ${CARLA_ROS2_NATIVE_INSTALL_PATH}/lib/libfastrtps.so
+        # carla-server only glob's carla/ros2/*.cpp (ROS2.cpp itself); the
+        # publisher/subscriber/middleware .cpp files under its subdirectories
+        # are compiled into this separate shared lib by the Ros2Native
+        # ExternalProject (see the two-build-split note atop ROS2.cpp). Any
+        # test that calls into ROS2:: actor-registration APIs pulls in the
+        # whole ROS2.cpp.o, which references those symbols, so this test
+        # binary must link the .so too — the Unreal plugin does the same via
+        # Carla.Build.cs's AddDynamicLibrary("libcarla-ros2-native.so").
+        ${CARLA_ROS2_NATIVE_INSTALL_PATH}/lib/libcarla-ros2-native.so
       )
       # libfastrtps.so privately depends on the foonathan_memory shared lib,
       # whose file name is version- and config-dependent (e.g.
@@ -530,6 +539,7 @@ if (BUILD_LIBCARLA_TESTS)
         "LINKER:--disable-new-dtags"
       )
       add_dependencies (libcarla_test_server fastdds)
+      add_dependencies (libcarla_test_server carla-ros2-native)
     endif ()
 
   endif ()

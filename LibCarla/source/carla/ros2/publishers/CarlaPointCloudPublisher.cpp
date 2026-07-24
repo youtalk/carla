@@ -7,6 +7,7 @@
 #include "carla/ros2/publishers/CarlaPointCloudPublisher.h"
 
 #include "carla/Logging.h"
+#include "carla/ros2/publishers/PointCloudTopic.h"
 #include "carla/ros2/publishers/PublisherImpl.h"
 #include "carla/ros2/types/msg/PointCloud2.h"
 #include "carla/ros2/types/msg/PointField.h"
@@ -60,13 +61,24 @@ std::vector<msg::PointField> BuildPointFields(
 }  // namespace
 
 CarlaPointCloudPublisher::CarlaPointCloudPublisher(
-    std::string base_topic_name, std::string frame_id)
+    std::string base_topic_name, std::string frame_id, bool has_topic_override,
+    PublisherQos qos)
   : BasePublisher(std::move(base_topic_name), std::move(frame_id)),
-    _impl(std::make_shared<PublisherImpl<CarlaPointCloudMsgTraits>>()) {
-  // Best-effort sensor-data QoS: point clouds are large and per-tick, so a
-  // slow subscriber must never block the publishing thread.
-  if (!_impl->Init(GetBaseTopicName() + "/point_cloud", PublisherQos::SensorData())) {
-    log_error("CarlaPointCloudPublisher: failed to initialise writer for", GetBaseTopicName());
+    _impl(std::make_shared<PublisherImpl<CarlaPointCloudMsgTraits>>()),
+    _has_topic_override(has_topic_override) {
+  // qos defaults to SensorData() (best-effort): point clouds are large and
+  // per-tick, so a slow subscriber must never block the publishing thread by
+  // default. CarlaLidarPublisher forwards the per-sensor
+  // ros2_qos_reliability/durability/history_depth blueprint attributes here
+  // (see ActorDispatcher::RegisterActor), letting Autoware-facing lidars
+  // match the AWSIM/tier4 BEST_EFFORT/VOLATILE/depth-5 profile exactly. A
+  // verbatim ros_topic_name override is published as-is; otherwise the
+  // default composition gets the "/point_cloud" suffix (see
+  // ComposePointCloudTopic, unit-tested directly in test_ros2_topic_name.cpp).
+  const std::string topic =
+      ComposePointCloudTopic(GetBaseTopicName(), has_topic_override, "point_cloud");
+  if (!_impl->Init(topic, qos)) {
+    log_error("CarlaPointCloudPublisher: failed to initialise writer for", topic);
   }
 }
 

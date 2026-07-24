@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include "carla/ros2/middleware/PublisherQos.h"
 #include "carla/ros2/publishers/BasePublisher.h"
 #include "carla/ros2/publishers/PointCloudFieldsLayout.h"
 
@@ -36,7 +37,17 @@ struct CarlaPointCloudMsgTraits;
 // pass the (base_topic_name, frame_id) pair through.
 class CarlaPointCloudPublisher : public BasePublisher {
 public:
-  CarlaPointCloudPublisher(std::string base_topic_name, std::string frame_id);
+  // has_topic_override is true when base_topic_name is a verbatim
+  // ros_topic_name override (see ROS2::BuildBaseTopicName): Init then
+  // publishes on base_topic_name as-is instead of appending "/point_cloud",
+  // since Autoware subscribes to the exact configured topic. qos is handed
+  // to the middleware verbatim at Init time; it defaults to SensorData()
+  // (best-effort), the behavior every point-cloud publisher had before
+  // per-sensor QoS support was added.
+  CarlaPointCloudPublisher(
+      std::string base_topic_name, std::string frame_id,
+      bool has_topic_override = false,
+      PublisherQos qos = PublisherQos::SensorData());
   ~CarlaPointCloudPublisher() override;
 
   CarlaPointCloudPublisher(const CarlaPointCloudPublisher &) = delete;
@@ -52,6 +63,12 @@ public:
       std::uint32_t height,
       std::uint32_t width,
       const std::uint8_t *data);
+
+  // Test/inspection accessor: true when this publisher was constructed with a
+  // verbatim ros_topic_name override (see ctor comment above). Lets unit tests
+  // confirm the flag reached the base class for every subclass in the
+  // point-cloud family without needing to observe the DDS wire directly.
+  [[nodiscard]] bool HasTopicOverride() const noexcept { return _has_topic_override; }
 
 protected:
   [[nodiscard]] virtual std::size_t GetPointSize() const = 0;
@@ -69,6 +86,7 @@ private:
       std::vector<std::uint8_t> data);
 
   std::shared_ptr<PublisherImpl<CarlaPointCloudMsgTraits>> _impl;
+  bool _has_topic_override{false};
 };
 
 }  // namespace ros2

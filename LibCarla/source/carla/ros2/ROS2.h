@@ -12,6 +12,7 @@
 #include "carla/ros2/ROS2CallbackData.h"
 #include "carla/ros2/middleware/Middleware.h"
 #include "carla/ros2/middleware/MiddlewareConfig.h"
+#include "carla/ros2/middleware/PublisherQos.h"
 #include "carla/streaming/detail/Types.h"
 
 #include <memory>
@@ -89,8 +90,42 @@ public:
   // subscriber when enable_ackermann_control is true, otherwise the direct
   // VehicleControl one. The two control topics are mutually exclusive so they
   // cannot contend frame to frame.
+  // qos is only ever consumed by GetOrCreateSensor's lidar branch today (see
+  // ActorDispatcher's ros2_qos_* attribute parsing, itself lidar-only via
+  // MakeLidarDefinition) — every other sensor type stores it in the
+  // registration but never reads it back. Defaults to SensorData()
+  // (best_effort/volatile/depth1), matching the wire behavior every
+  // CarlaPointCloudPublisher subclass had before per-sensor QoS support
+  // existed, so a caller that omits qos (or a lidar spawned without the
+  // ros2_qos_* attributes) reproduces the pre-QoS-support default rather than
+  // silently upgrading to a subscriber-blocking Reliable writer.
   void RegisterSensor(
-      void *actor, std::string ros_name, std::string frame_id, bool publish_tf);
+      void *actor, std::string ros_name, std::string frame_id, bool publish_tf,
+      std::string ros_topic_name = "", PublisherQos qos = PublisherQos::SensorData());
+
+  // Test-only accessor: BuildBaseTopicName itself stays private since it is an
+  // internal composition helper, not part of the actor-registration API.
+  std::string BuildBaseTopicNameForTest(void *actor) const { return BuildBaseTopicName(actor); }
+
+  // Test-only accessor: the per-sensor QoS is otherwise only observable via
+  // the wire (DDS discovery), so unit tests read the registration directly.
+  PublisherQos LookupSensorQosForTest(void *actor) const {
+    auto it = _registrations.find(actor);
+    return it == _registrations.end() ? PublisherQos() : it->second.qos;
+  }
+
+  // Test-only accessors: exercise the private GetOrCreateSensor dispatch for
+  // the Radar / RayCastSemanticLidar branches (including the has_topic_override
+  // plumbing) without needing a full ProcessDataFromRadar/SemanticLidar call
+  // with real sensor payloads. The ESensors enum they bake in is TU-local to
+  // ROS2.cpp, so these thin wrappers (defined there) are the only way to reach
+  // a specific branch from outside; see CarlaPointCloudPublisher::HasTopicOverride
+  // for the assertion these enable.
+  std::shared_ptr<BasePublisher> GetOrCreateRadarSensorForTest(
+      carla::streaming::detail::stream_id_type id, void *actor);
+  std::shared_ptr<BasePublisher> GetOrCreateSemanticLidarSensorForTest(
+      carla::streaming::detail::stream_id_type id, void *actor);
+
   void UnregisterSensor(void *actor);
   void RegisterVehicle(
       void *actor, std::string ros_name, std::string frame_id, ActorCallback callback,
@@ -209,7 +244,20 @@ private:
   struct ActorRegistration {
     std::string ros_name;
     std::string frame_id;
+    std::string ros_topic_name;   // non-empty => verbatim topic, no composition
     bool publish_tf{true};
+    // Defaults to SensorData() (best_effort/volatile/depth1) so this struct
+    // default matches RegisterSensor's own default parameter exactly.
+    // RegisterVehicle's designated-init (ActorRegistration{...}) never sets
+    // .qos explicitly, so before this change it silently fell back to the
+    // plain PublisherQos{} struct default (Reliable) instead — a divergence
+    // between the vehicle and sensor registration paths with no functional
+    // consequence today (qos is lidar-only, see below) but a footgun for any
+    // future reader who fell back to .qos on a vehicle registration. Lidar
+    // sensors get their QoS parsed from the ros2_qos_* blueprint attributes
+    // (see ActorDispatcher::RegisterActor); every other sensor/actor type
+    // stores this default but never reads it back.
+    PublisherQos qos{PublisherQos::SensorData()};
   };
 
   // Resolves an actor's `rt/carla/[parent/]ros_name` base topic by walking the

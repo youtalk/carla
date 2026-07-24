@@ -176,12 +176,18 @@ void ROS2::SetTimestamp(double timestamp) {
 }
 
 void ROS2::RegisterSensor(
-    void *actor, std::string ros_name, std::string frame_id, bool publish_tf) {
+    void *actor, std::string ros_name, std::string frame_id, bool publish_tf,
+    std::string ros_topic_name, PublisherQos qos) {
   // insert_or_assign so re-registering an actor with a new ros_name actually
   // updates the entry; unordered_map::insert would silently keep the stale
   // one.
-  _registrations.insert_or_assign(
-      actor, ActorRegistration{std::move(ros_name), std::move(frame_id), publish_tf});
+  ActorRegistration reg;
+  reg.ros_name = std::move(ros_name);
+  reg.frame_id = std::move(frame_id);
+  reg.ros_topic_name = std::move(ros_topic_name);
+  reg.publish_tf = publish_tf;
+  reg.qos = qos;
+  _registrations.insert_or_assign(actor, std::move(reg));
 }
 
 void ROS2::UnregisterSensor(void *actor) {
@@ -196,7 +202,8 @@ void ROS2::RegisterVehicle(
     void *actor, std::string ros_name, std::string frame_id, ActorCallback callback,
     bool enable_ackermann_control) {
   _registrations.insert_or_assign(
-      actor, ActorRegistration{ros_name, frame_id, true});
+      actor, ActorRegistration{.ros_name = ros_name, .frame_id = frame_id,
+                               .ros_topic_name = {}, .publish_tf = true});
 
   // Idempotency: drop any prior subscribers / callbacks bound to this actor
   // so a re-registration does not accumulate duplicate DataReaders nor leave
@@ -298,7 +305,19 @@ std::string ROS2::BuildParentChain(void *actor) const {
 }
 
 std::string ROS2::BuildBaseTopicName(void *actor) const {
-  const std::string ros_name = LookupRosName(actor);
+  auto it = _registrations.find(actor);
+  if (it == _registrations.end()) {
+    return std::string{};
+  }
+  // Verbatim override: the runner supplied the exact ROS topic. Prepend only
+  // the DDS wire prefix "rt" (the middleware maps "rt/<x>" <-> ROS "/<x>").
+  // Skip the "carla/" segment, the parent chain, AND the per-type suffix so
+  // the Autoware topic name is emitted exactly as configured.
+  if (!it->second.ros_topic_name.empty()) {
+    const std::string &t = it->second.ros_topic_name;
+    return t.front() == '/' ? "rt" + t : "rt/" + t;
+  }
+  const std::string &ros_name = it->second.ros_name;
   if (ros_name.empty()) {
     return std::string{};
   }
@@ -386,9 +405,23 @@ std::shared_ptr<BasePublisher> ROS2::GetOrCreateSensor(
       break;
     }
     case ESensors::DVSCamera: {
-      resolve("dvs");
+      // Skip auto-naming resolution when the sensor has a verbatim
+      // ros_topic_name override: BuildBaseTopicName never consults ros_name in
+      // that case, so resolving the "dvs__" placeholder would be pointless
+      // mutation. has_override also tells the point-cloud side
+      // (CarlaDVSPointCloudPublisher, via the composite) to skip the
+      // "/point_cloud" suffix append (see CarlaPointCloudPublisher::Init) so
+      // the override topic is emitted exactly as configured — mirrors the
+      // ESensors::RayCastLidar branch below for the rest of the point-cloud
+      // publisher family.
+      const auto reg_it = _registrations.find(actor);
+      const bool has_override =
+          reg_it != _registrations.end() && !reg_it->second.ros_topic_name.empty();
+      if (!has_override) {
+        resolve("dvs");
+      }
       publisher = std::make_shared<CarlaDVSCameraPublisher>(
-          BuildBaseTopicName(actor), LookupFrameId(actor));
+          BuildBaseTopicName(actor), LookupFrameId(actor), has_override);
       break;
     }
     case ESensors::GnssSensor: {
@@ -404,23 +437,59 @@ std::shared_ptr<BasePublisher> ROS2::GetOrCreateSensor(
       break;
     }
     case ESensors::Radar: {
-      resolve("radar");
+      // See ESensors::DVSCamera above / ESensors::RayCastLidar below: same
+      // has_override skip-resolve / skip-suffix rationale, mirrored here for
+      // the "radar__" placeholder.
+      const auto reg_it = _registrations.find(actor);
+      const bool has_override =
+          reg_it != _registrations.end() && !reg_it->second.ros_topic_name.empty();
+      if (!has_override) {
+        resolve("radar");
+      }
       publisher = std::make_shared<CarlaRadarPublisher>(
-          BuildBaseTopicName(actor), LookupFrameId(actor));
+          BuildBaseTopicName(actor), LookupFrameId(actor), has_override);
       break;
     }
     case ESensors::RayCastSemanticLidar: {
-      resolve("ray_cast_semantic");
+      // See ESensors::DVSCamera above / ESensors::RayCastLidar below: same
+      // has_override skip-resolve / skip-suffix rationale, mirrored here for
+      // the "ray_cast_semantic__" placeholder.
+      const auto reg_it = _registrations.find(actor);
+      const bool has_override =
+          reg_it != _registrations.end() && !reg_it->second.ros_topic_name.empty();
+      if (!has_override) {
+        resolve("ray_cast_semantic");
+      }
       publisher = std::make_shared<CarlaSemanticLidarPublisher>(
-          BuildBaseTopicName(actor), LookupFrameId(actor));
+          BuildBaseTopicName(actor), LookupFrameId(actor), has_override);
       break;
     }
     case ESensors::RayCastLidar: {
       // Both ray-cast and HSS lidars dispatch here; resolve either placeholder.
-      resolve("ray_cast");
-      resolve("hss_lidar");
+      // Skip auto-naming resolution when the sensor has a verbatim
+      // ros_topic_name override: BuildBaseTopicName never consults ros_name in
+      // that case, so resolving the "prefix__" placeholder would be pointless
+      // mutation. has_override also tells the publisher to skip the
+      // "/point_cloud" suffix append (see CarlaPointCloudPublisher::Init) so
+      // the override topic is emitted exactly as configured.
+      const auto reg_it = _registrations.find(actor);
+      const bool has_override =
+          reg_it != _registrations.end() && !reg_it->second.ros_topic_name.empty();
+      if (!has_override) {
+        resolve("ray_cast");
+        resolve("hss_lidar");
+      }
+      // Per-sensor QoS (reliability/durability/history depth), parsed from
+      // the ros2_qos_* blueprint attributes in ActorDispatcher::RegisterActor
+      // and threaded through RegisterSensor. Falls back to SensorData()
+      // (best_effort/volatile/depth1) if the actor is somehow unregistered by
+      // the time its first sample arrives — the same pre-QoS-support default
+      // every CarlaPointCloudPublisher subclass had, not the plain Reliable
+      // struct default, so this edge case cannot silently upgrade a lidar to
+      // a subscriber-blocking writer.
+      const PublisherQos qos = reg_it != _registrations.end() ? reg_it->second.qos : PublisherQos::SensorData();
       publisher = std::make_shared<CarlaLidarPublisher>(
-          BuildBaseTopicName(actor), LookupFrameId(actor));
+          BuildBaseTopicName(actor), LookupFrameId(actor), has_override, qos);
       break;
     }
     case ESensors::LaneInvasionSensor:
@@ -441,6 +510,16 @@ std::shared_ptr<BasePublisher> ROS2::GetOrCreateSensor(
     _publishers.insert({actor, publisher});
   }
   return publisher;
+}
+
+std::shared_ptr<BasePublisher> ROS2::GetOrCreateRadarSensorForTest(
+    carla::streaming::detail::stream_id_type id, void *actor) {
+  return GetOrCreateSensor(ESensors::Radar, id, actor);
+}
+
+std::shared_ptr<BasePublisher> ROS2::GetOrCreateSemanticLidarSensorForTest(
+    carla::streaming::detail::stream_id_type id, void *actor) {
+  return GetOrCreateSensor(ESensors::RayCastSemanticLidar, id, actor);
 }
 
 std::shared_ptr<CarlaTransformPublisher> ROS2::GetOrCreateTransformPublisher(void *actor) {

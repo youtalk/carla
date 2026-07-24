@@ -13,8 +13,14 @@ namespace ros2 {
 
 class CarlaRadarPublisher : public CarlaPointCloudPublisher {
 public:
-  CarlaRadarPublisher(std::string base_topic_name, std::string frame_id)
-    : CarlaPointCloudPublisher(std::move(base_topic_name), std::move(frame_id)) {}
+  // has_topic_override forwards verbatim to CarlaPointCloudPublisher: see its
+  // ctor comment for the "/point_cloud" suffix-suppression rationale, mirrored
+  // here from CarlaLidarPublisher for the whole point-cloud publisher family.
+  CarlaRadarPublisher(
+      std::string base_topic_name, std::string frame_id,
+      bool has_topic_override = false)
+    : CarlaPointCloudPublisher(
+          std::move(base_topic_name), std::move(frame_id), has_topic_override) {}
 
 private:
   [[nodiscard]] std::size_t GetPointSize() const override;

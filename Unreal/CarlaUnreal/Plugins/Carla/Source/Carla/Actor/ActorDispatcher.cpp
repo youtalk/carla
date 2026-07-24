@@ -192,13 +192,75 @@ FCarlaActor* UActorDispatcher::RegisterActor(
     auto ROS2 = carla::ros2::ROS2::GetInstance();
     if (ROS2->IsEnabled())
     {
-      // actor ros_name
+      // actor ros_name / per-actor ros_topic_name override / per-sensor QoS
+      // (lidar-only attributes today, set by MakeLidarDefinition; every other
+      // sensor definition — GNSS, IMU, camera via GetOrCreateCameraSensor,
+      // etc. — never emits ros2_qos_* variations, so Qos is parsed but only
+      // ever consumed by ROS2::GetOrCreateSensor's lidar branch. A future
+      // sensor-def addition wanting per-sensor QoS must both add the
+      // attributes here and thread `.qos` through its own GetOrCreate* path).
+      // Qos starts from SensorData() (best_effort/volatile/depth1), matching
+      // the wire default every CarlaPointCloudPublisher subclass had before
+      // per-sensor QoS support existed: a reliable subscriber-blocking writer
+      // must never become the default for a missing/malformed attribute.
       std::string RosName;
+      std::string RosTopicName;
+      carla::ros2::PublisherQos Qos = carla::ros2::PublisherQos::SensorData();
       for (auto &&Attr : Description.Variations)
       {
         if (Attr.Key == "ros_name")
         {
           RosName = std::string(TCHAR_TO_UTF8(*Attr.Value.Value));
+        }
+        else if (Attr.Key == "ros_topic_name")
+        {
+          RosTopicName = std::string(TCHAR_TO_UTF8(*Attr.Value.Value));
+        }
+        else if (Attr.Key == "ros2_qos_reliability")
+        {
+          const FString &Value = Attr.Value.Value;
+          if (Value == "best_effort")
+          {
+            Qos.reliability = carla::ros2::ReliabilityKind::BestEffort;
+          }
+          else if (Value == "reliable")
+          {
+            Qos.reliability = carla::ros2::ReliabilityKind::Reliable;
+          }
+          else if (!Value.IsEmpty())
+          {
+            UE_LOG(LogCarla, Warning, TEXT("Unrecognized ros2_qos_reliability value '%s'; keeping the default."), *Value);
+          }
+        }
+        else if (Attr.Key == "ros2_qos_durability")
+        {
+          const FString &Value = Attr.Value.Value;
+          if (Value == "transient_local")
+          {
+            Qos.durability = carla::ros2::DurabilityKind::TransientLocal;
+          }
+          else if (Value == "volatile")
+          {
+            Qos.durability = carla::ros2::DurabilityKind::Volatile;
+          }
+          else if (!Value.IsEmpty())
+          {
+            UE_LOG(LogCarla, Warning, TEXT("Unrecognized ros2_qos_durability value '%s'; keeping the default."), *Value);
+          }
+        }
+        else if (Attr.Key == "ros2_qos_history_depth")
+        {
+          const FString &Value = Attr.Value.Value;
+          if (!Value.IsEmpty())
+          {
+            const int32 Parsed = FCString::Atoi(*Value);
+            const int32 Clamped = FMath::Clamp(Parsed, 1, 10000);
+            if (Clamped != Parsed)
+            {
+              UE_LOG(LogCarla, Warning, TEXT("ros2_qos_history_depth value '%s' out of range [1, 10000]; clamped to %d."), *Value, Clamped);
+            }
+            Qos.history_depth = static_cast<uint32_t>(Clamped);
+          }
         }
       }
       const std::string id = std::string(TCHAR_TO_UTF8(*Description.Id));
@@ -220,7 +282,7 @@ FCarlaActor* UActorDispatcher::RegisterActor(
       }
       if (!ResolvedRosName.empty())
       {
-        ROS2->RegisterSensor(static_cast<void*>(&Actor), ResolvedRosName, ResolvedRosName, true);
+        ROS2->RegisterSensor(static_cast<void*>(&Actor), ResolvedRosName, ResolvedRosName, true, RosTopicName, Qos);
       }
 
       // vehicle controller for hero. Scan the variations once for the hero role and the
