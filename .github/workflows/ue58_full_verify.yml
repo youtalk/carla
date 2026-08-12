@@ -1,0 +1,271 @@
+name: UE58-Full-Verify
+
+# One-shot cloud verification of PR carla-simulator/carla#9826 (UE 5.8 port).
+#
+# The job proves each reported failure before fixing it: every "baseline" step
+# is allowed to fail and its log is scanned for the expected signature, then
+# the corresponding fix is applied and the step re-run as a hard gate. The
+# resulting package is uploaded so the runtime gate (which needs a GPU
+# Ubicloud does not offer) can be run on a local machine.
+#
+# Requires secret UE_CLONE_TOKEN: a token that can read the private
+# CarlaUnreal/UnrealEngine repository.
+
+on:
+  workflow_dispatch:
+    inputs:
+      maps_to_cook:
+        description: "Maps to cook (empty = all; one map keeps the cook short)"
+        type: string
+        required: false
+        default: "Town10HD_Opt"
+      vcpu:
+        description: "Ubicloud runner vCPU count (60 = 600GB disk, 30 physical cores)"
+        type: string
+        required: false
+        default: "60"
+
+concurrency:
+  group: ue58-full-verify
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: UE 5.8 build + cook + package
+    runs-on: ubicloud-standard-${{ inputs.vcpu }}
+    timeout-minutes: 1400
+
+    env:
+      UE_BRANCH: ue58-dev-carla
+      CONTENT_BRANCH: ue58-dev-carla
+      CARLA_UNREAL_ENGINE_PATH: /home/runner/ue58
+      CARLA_MAPS_TO_COOK: ${{ inputs.maps_to_cook }}
+      LOGS: /home/runner/verify-logs
+
+    steps:
+      - name: Runner facts
+        run: |
+          set -x
+          nproc; free -g; df -h /
+          lsb_release -a || cat /etc/os-release
+          mkdir -p "$LOGS"
+
+      - name: Checkout CARLA (PR #9826 head + this workflow)
+        uses: actions/checkout@v4
+
+      - name: Install CARLA prerequisites
+        run: bash Util/SetupUtils/InstallPrerequisites.sh 2>&1 | tee "$LOGS/00-prereqs.log"
+
+      - name: Clone CarlaUnreal/UnrealEngine @ ${{ env.UE_BRANCH }}
+        run: |
+          git clone --depth 1 -b "$UE_BRANCH" \
+            "https://x-access-token:${{ secrets.UE_CLONE_TOKEN }}@github.com/CarlaUnreal/UnrealEngine.git" \
+            "$CARLA_UNREAL_ENGINE_PATH"
+          cat "$CARLA_UNREAL_ENGINE_PATH/Engine/Build/Build.version"
+          df -h /
+
+      - name: Engine Setup.sh (third-party dependency download)
+        run: |
+          cd "$CARLA_UNREAL_ENGINE_PATH"
+          ./Setup.sh 2>&1 | tail -n 200 | tee "$LOGS/01-ue-setup.log"
+          df -h /
+
+      - name: Engine GenerateProjectFiles.sh
+        run: |
+          cd "$CARLA_UNREAL_ENGINE_PATH"
+          ./GenerateProjectFiles.sh 2>&1 | tail -n 200 | tee "$LOGS/02-ue-genproj.log"
+          ls Engine/Extras/ThirdPartyNotUE/SDKs/HostLinux/Linux_x64/
+
+      # ------------------------------------------------------------ issue #1 --
+      # A fresh clone only ever has one SDK, so the reported failure needs the
+      # in-place-upgrade layout reproduced deliberately: plant a decoy older
+      # SDK and observe which one Toolchain.cmake selects.
+      - name: "Issue #1 probe: toolchain SDK selection with two SDKs present"
+        run: |
+          set -x
+          SDKS="$CARLA_UNREAL_ENGINE_PATH/Engine/Extras/ThirdPartyNotUE/SDKs/HostLinux/Linux_x64"
+          DECOY="$SDKS/v23_clang-18.1.0-rockylinux8/x86_64-unknown-linux-gnu"
+          mkdir -p "$DECOY/bin" "$DECOY/lib64" "$DECOY/include"
+
+          probe () {
+            rm -rf /tmp/probe-build
+            cmake -S . -B /tmp/probe-build -G Ninja \
+              --toolchain "$PWD/CMake/Toolchain.cmake" \
+              -DBUILD_CARLA_UNREAL=OFF -DBUILD_PYTHON_API=OFF \
+              -DBUILD_LIBCARLA_TESTS=OFF -DBUILD_EXAMPLES=OFF \
+              > "$1" 2>&1 || true
+            grep -E '^UE_SYSROOT(:|=)' /tmp/probe-build/CMakeCache.txt || echo "UE_SYSROOT: <configure failed>"
+          }
+
+          echo "--- BASELINE (unpatched Toolchain.cmake) ---"       | tee    "$LOGS/03-issue1.txt"
+          probe "$LOGS/03-issue1-baseline-configure.log"            | tee -a "$LOGS/03-issue1.txt"
+
+          bash Util/CI/ue58_fixes.sh toolchain
+          echo "--- AFTER FIX ---"                                  | tee -a "$LOGS/03-issue1.txt"
+          probe "$LOGS/03-issue1-fixed-configure.log"               | tee -a "$LOGS/03-issue1.txt"
+
+          rm -rf "$SDKS/v23_clang-18.1.0-rockylinux8" /tmp/probe-build
+          echo "decoy removed; remaining SDKs:"; ls "$SDKS"
+
+      - name: Clone CARLA content @ ${{ env.CONTENT_BRANCH }}
+        run: |
+          mkdir -p Unreal/CarlaUnreal/Content
+          git clone --depth 1 -b "$CONTENT_BRANCH" \
+            https://bitbucket.org/carla-simulator/carla-content.git \
+            Unreal/CarlaUnreal/Content/Carla
+          du -sh Unreal/CarlaUnreal/Content/Carla
+          df -h /
+
+      - name: Fetch DLSS SDK (optional, non-fatal)
+        continue-on-error: true
+        run: |
+          bash Util/SetupUtils/SetupDLSS.sh 2>&1 | tail -n 40 | tee "$LOGS/04-dlss.log"
+          if [ -f "$HOME/SDKs/DLSS/lib/Linux_x86_64/libnvsdk_ngx.a" ]; then
+            echo "DLSS_SDK=$HOME/SDKs/DLSS" >> "$GITHUB_ENV"
+          fi
+
+      - name: CMake configure (Release, UE on)
+        run: |
+          cmake --preset Release \
+            -DBUILD_CARLA_UNREAL=ON \
+            -DBUILD_EXAMPLES=OFF \
+            -DCARLA_UNREAL_BUILD_TYPE=Development \
+            -DCARLA_MAPS_TO_COOK="$CARLA_MAPS_TO_COOK" \
+            -Dstandard_math_library_linked_to_as_m=TRUE \
+            2>&1 | tee "$LOGS/05-configure.log"
+
+      - name: Build carla-client / carla-server / PythonAPI
+        run: |
+          cmake --build Build/Release --target carla-client  2>&1 | tail -n 60
+          cmake --build Build/Release --target carla-server  2>&1 | tail -n 60
+          cmake --build Build/Release --target carla-python-api 2>&1 | tail -n 60
+          df -h /
+
+      # ------------------------------------------------------------ issue #2 --
+      - name: "Issue #2 baseline: build carla-unreal (expect GEngine errors)"
+        id: unreal_baseline
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          cmake --build Build/Release --target carla-unreal 2>&1 | tee "$LOGS/06-carla-unreal-baseline.log"
+
+      - name: "Issue #2 verdict"
+        run: |
+          log="$LOGS/06-carla-unreal-baseline.log"
+          if grep -q "use of undeclared identifier 'GEngine'" "$log"; then
+            echo "ISSUE2=REPRODUCED" | tee -a "$GITHUB_ENV"
+            grep -c "use of undeclared identifier 'GEngine'" "$log"
+          else
+            echo "ISSUE2=NOT_REPRODUCED (outcome=${{ steps.unreal_baseline.outcome }})" | tee -a "$LOGS/06-verdict.txt"
+          fi
+
+      - name: "Issue #2 fix + rebuild carla-unreal (hard gate)"
+        run: |
+          set -o pipefail
+          bash Util/CI/ue58_fixes.sh carlaengine
+          cmake --build Build/Release --target carla-unreal 2>&1 | tee "$LOGS/07-carla-unreal-fixed.log" | tail -n 80
+          df -h /
+
+      # ------------------------------------------------------------ issue #3 --
+      - name: "Issue #3 baseline: build carla-unreal-editor (expect EAllowShrinking errors)"
+        id: editor_baseline
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          cmake --build Build/Release --target carla-unreal-editor 2>&1 | tee "$LOGS/08-editor-baseline.log"
+
+      - name: "Issue #3 verdict"
+        run: |
+          log="$LOGS/08-editor-baseline.log"
+          if grep -q "EAllowShrinking" "$log"; then
+            echo "ISSUE3=REPRODUCED"
+            grep -n "EAllowShrinking" "$log" | head -20
+          else
+            echo "ISSUE3=NOT_REPRODUCED (outcome=${{ steps.editor_baseline.outcome }})" | tee -a "$LOGS/08-verdict.txt"
+          fi
+
+      - name: "Issue #3 fix + rebuild carla-unreal-editor (hard gate)"
+        run: |
+          set -o pipefail
+          bash Util/CI/ue58_fixes.sh streetmap
+          cmake --build Build/Release --target carla-unreal-editor 2>&1 | tee "$LOGS/09-editor-fixed.log" | tail -n 80
+          df -h /
+
+      # --------------------------------------------------------- issues #4/#5 --
+      - name: "Issues #4/#5 baseline: package (expect cook ensures + empty package)"
+        id: package_baseline
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          cmake --build Build/Release --target package-development 2>&1 | tee "$LOGS/10-package-baseline.log"
+
+      - name: "Issues #4/#5 verdict"
+        run: |
+          log="$LOGS/10-package-baseline.log"
+          {
+            echo "== cook ensure signature (issue #4) =="
+            grep -n "TranslucencyLightingVolumeDim\|TranslucencyVolumeBlur\|Ensure condition failed\|Error_UnknownCookFailure" "$log" | head -30 || true
+            echo
+            echo "== packaged contents (issue #5) =="
+            find Build/Release/Package -name '*.pak' -o -name '*.utoc' -o -name '*.ucas' -o -name 'ue.projectstore' | head -20 || true
+            echo "-- does the archive carry a Content directory at all? --"
+            find Build/Release/Package -maxdepth 4 -type d | head -30 || true
+          } | tee "$LOGS/10-verdict.txt"
+          du -sh Build/Release/Package/* 2>/dev/null || true
+
+      - name: "Issues #4/#5 fix + repackage (hard gate)"
+        run: |
+          set -o pipefail
+          bash Util/CI/ue58_fixes.sh scalability
+          bash Util/CI/ue58_fixes.sh pak
+          # The archive step copies without deleting, so a ue.projectstore left
+          # by the previous Zen-only stage would survive into the -pak package
+          # and break the server with "Network data streaming failed to connect".
+          find Build/Release -name 'ue.projectstore' -print -delete || true
+          cmake --build Build/Release --target package-development 2>&1 | tee "$LOGS/11-package-fixed.log" | tail -n 100
+          df -h /
+
+      - name: Verify packaged output
+        run: |
+          {
+            echo "== pak / iostore artefacts =="
+            find Build/Release -name '*.pak' -o -name '*.ucas' -o -name '*.utoc' -o -name 'global.utoc' | head -20
+            echo
+            echo "== leftover ue.projectstore (must be empty) =="
+            find Build/Release -name 'ue.projectstore' | head
+            echo
+            echo "== package sizes =="
+            du -sh Build/Release/Package*/* 2>/dev/null | head -20
+          } | tee "$LOGS/12-package-verify.txt"
+
+          test -n "$(find Build/Release -name '*.pak' -print -quit)" \
+            || { echo "FAIL: no .pak in package"; exit 1; }
+          test -z "$(find Build/Release -name 'ue.projectstore' -print -quit)" \
+            || { echo "FAIL: stale ue.projectstore survived into the package"; exit 1; }
+
+      - name: Collect the diff of every applied fix
+        if: always()
+        run: |
+          git diff > "$LOGS/99-carla-fixes.diff" || true
+          git -C Unreal/CarlaUnreal/Plugins/StreetMap diff > "$LOGS/99-streetmap-fixes.diff" 2>/dev/null || true
+          wc -l "$LOGS"/99-*.diff || true
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ue58-verify-logs
+          path: /home/runner/verify-logs
+          retention-days: 14
+
+      - name: Upload package
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ue58-package-development
+          path: |
+            Build/Release/Package*/**/*.tar.gz
+            Build/Release/Package*/**/*.zip
+          if-no-files-found: warn
+          compression-level: 0
+          retention-days: 7
