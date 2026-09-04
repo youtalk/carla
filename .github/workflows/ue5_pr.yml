@@ -13,6 +13,9 @@ concurrency:
 jobs:
   ubuntu-pr:
     name: Ubuntu PR
+    # The self-hosted GPU runner only exists upstream; the youtalk fork runs PR
+    # CI on Ubicloud via ubicloud_pr.yml, so skip this job on the fork.
+    if: ${{ github.repository == 'carla-simulator/carla' }}
     uses: ./.github/workflows/_ci-ubuntu.yml
     with:
       python-versions: "3.10"

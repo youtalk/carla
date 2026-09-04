@@ -1,0 +1,107 @@
+# UE 5.8 (ue58-dev): v26 clang-20.1.8 toolchain image, Python >= 3.12, Ubuntu 24.04 only (UE 5.8 builder and ROS 2 Jazzy are 24.04).
+name: Ubicloud CI
+
+on:
+  workflow_call:
+    inputs:
+      ubuntu-version:
+        type: string
+        required: false
+        default: "24.04"
+      # Runner vCPU count. 8 is the cost-performance sweet spot measured on
+      # the UE 5.5 line; raise it only if the build phase gets slow.
+      vcpu:
+        type: string
+        required: false
+        default: "8"
+
+jobs:
+  build:
+    name: Build (Ubuntu ${{ inputs.ubuntu-version }}, ${{ inputs.vcpu }} vCPU)
+    runs-on: ubicloud-standard-${{ inputs.vcpu }}
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/carla-ue5-toolchain:ue58-${{ inputs.ubuntu-version }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    env:
+      CARLA_UNREAL_ENGINE_PATH: /unreal-engine
+
+    defaults:
+      run:
+        shell: bash -leo pipefail {0}
+
+    steps:
+      - name: Init conda
+        run: |
+          conda init bash
+          echo "source activate carla312" >> ~/.bashrc
+          cat <<'EOF' > ~/.bash_profile
+          if [ -f ~/.bashrc ]; then source ~/.bashrc; fi
+          EOF
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Activate conda environment
+        run: conda activate carla312
+
+      - name: Record build start
+        run: echo "BUILD_START=$(date +%s)" >> "$GITHUB_ENV"
+
+      - name: Configure
+        run: |
+          cmake --preset Release \
+            -DENABLE_ROS2=ON \
+            -DBUILD_CARLA_UNREAL=OFF \
+            -DBUILD_EXAMPLES=OFF
+
+      - name: Build LibCarla Client
+        run: cmake --build Build/Release --target carla-client
+
+      - name: Build LibCarla Server
+        run: cmake --build Build/Release --target carla-server
+
+      - name: Build PythonAPI
+        run: cmake --build Build/Release --target carla-python-api
+
+      - name: Fetch LibCarla test fixtures
+        run: git clone --depth 1 -b 0.1.4 https://github.com/carla-simulator/opendrive-test-files.git Build/test-content
+
+      - name: Build LibCarla tests
+        run: cmake --build Build/Release --target libcarla_test_server libcarla_test_client
+
+      - name: Run LibCarla tests
+        run: |
+          ./Build/Release/LibCarla/libcarla_test_server --gtest_filter=-*benchmark* --gtest_output=xml:gtest-server.xml
+          ./Build/Release/LibCarla/libcarla_test_client --gtest_filter=-*benchmark* --gtest_output=xml:gtest-client.xml
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gtest-${{ inputs.ubuntu-version }}
+          path: gtest-*.xml
+
+      - name: Record benchmark result
+        run: |
+          BUILD_SECONDS=$(( $(date +%s) - BUILD_START ))
+          echo "Build phase: ${BUILD_SECONDS}s"
+          printf '{"vcpu": %s, "ubuntu": "%s", "build_seconds": %s}\n' \
+            "${{ inputs.vcpu }}" "${{ inputs.ubuntu-version }}" "${BUILD_SECONDS}" \
+            > bench.json
+          cat bench.json
+
+      - name: Upload benchmark result
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-${{ inputs.vcpu }}
+          path: bench.json
+
+      - name: Build summary
+        if: always()
+        run: |
+          echo "## Build Summary (Ubuntu ${{ inputs.ubuntu-version }})" >> $GITHUB_STEP_SUMMARY
+          echo "- Runner: ubicloud-standard-${{ inputs.vcpu }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Container: carla-ue5-toolchain:ue58-${{ inputs.ubuntu-version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Targets: carla-client, carla-server, carla-python-api, libcarla_test_server, libcarla_test_client" >> $GITHUB_STEP_SUMMARY
