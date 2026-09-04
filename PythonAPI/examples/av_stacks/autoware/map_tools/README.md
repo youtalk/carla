@@ -69,6 +69,22 @@ The driver orchestrates:
 `generate_lanelet2_map.py --xodr file.xodr` also works fully offline
 (skips traffic-light injection, with a warning).
 
+### Bound-orientation QC
+
+`generate_lanelet2_map.py` repairs a converter defect automatically: crdesigner
+shares the centre linestring of an opposing-lane pair between both lanelets
+without inverting it, so one lanelet per pair has its two bounds running in
+opposite directions. By lanelet2 convention both bounds run along the direction
+of travel, so such a map states that direction only implicitly and leaves it to
+the loader's `geometry::align` heuristic -- which lanelet2 provides for exactly
+this case. The pass is preventive: on Town10HD it repairs 17 of 160 road
+lanelets, `align()` already resolves all 17 the same way, and no drive-level
+impact has been demonstrated. Check any lanelet2 map with
+
+    python3 lanelet2_bounds.py --check maps/Town10HD/lanelet2_map.osm
+
+(exit 1 lists the affected lanelet ids) and repair with `--fix`.
+
 ## Rules of engagement
 
 * Tools **never launch** a CARLA server; they connect to `--host/--port`.
@@ -85,4 +101,5 @@ The driver orchestrates:
 ```bash
 python3 tests/test_pcd_io.py      # PCD writer/reader/voxel unit tests (numpy only)
 bash -n fetch_prebuilt_maps.sh    # syntax check
+python3 -m pytest tests/test_lanelet2_bounds.py   # bound-orientation detection/repair
 ```

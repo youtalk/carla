@@ -39,6 +39,7 @@ import xml.etree.ElementTree as ET
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from carla_common import carla_xyz_to_map, connect  # noqa: E402
+from lanelet2_bounds import fix_shared_bounds  # noqa: E402
 
 CONVERTER_HELP = (
     "ERROR: commonroad-scenario-designer is not importable.\n"
@@ -98,6 +99,7 @@ def convert_xodr_to_lanelet2(xodr_path, out_osm):
         raise RuntimeError("conversion produced no output -- check the OpenDRIVE input")
     ensure_metainfo(out_osm)  # required by Autoware's route_handler
     prune_untyped_lanelets(out_osm)
+    fix_opposing_shared_bounds(out_osm)
     print("Conversion done.", flush=True)
 
 
@@ -121,6 +123,26 @@ def prune_untyped_lanelets(osm_path):
     if pruned:
         tree.write(osm_path, encoding="UTF-8", xml_declaration=True)
     print(f"Pruned {pruned} untyped (non-driving) lanelet relations.", flush=True)
+
+
+def fix_opposing_shared_bounds(osm_path):
+    """Repair lanelets whose bounds run against each other (see lanelet2_bounds).
+
+    crdesigner references the shared centre linestring of an opposing-lane
+    pair un-inverted from both lanelets, so one of the two ends up with its
+    bounds running in opposite directions and its direction of travel decided
+    by lanelet2's geometry::align heuristic rather than by the map. On Town10HD
+    this affects 17 of 160 road lanelets. The pass is preventive: it states the
+    ordering explicitly, and on this map align() already resolves all 17 the
+    same way the repair does."""
+    tree = ET.parse(osm_path)
+    root = tree.getroot()
+    report = fix_shared_bounds(root)
+    if report.fixed:
+        ET.indent(tree, space="  ")
+        tree.write(osm_path, encoding="UTF-8", xml_declaration=True)
+    print(f"Repaired {len(report.fixed)} lanelet(s) with opposing shared bounds"
+          + (f"; UNRESOLVED: {' '.join(report.unresolved)}" if report.unresolved else "."), flush=True)
 
 
 # --------------------------------------------------------------------------
