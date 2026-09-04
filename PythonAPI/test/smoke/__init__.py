@@ -20,7 +20,10 @@ except IndexError:
 import carla
 import time
 
-TESTING_ADDRESS = ('localhost', 3654)
+# Override with CARLA_SMOKE_HOST / CARLA_SMOKE_PORT to point the suite at a
+# simulator that is not on the historical 3654 (e.g. the Autoware flow's 2000).
+TESTING_ADDRESS = (os.environ.get('CARLA_SMOKE_HOST', 'localhost'),
+                   int(os.environ.get('CARLA_SMOKE_PORT', '3654')))
 VEHICLE_VEHICLES_EXCLUDE_FROM_OLD_TOWNS = ['vehicle.mitsubishi.fusorosa', 'vehicle.carlamotors.european_hgv', 'vehicle.carlamotors.firetruck']
 
 class SmokeTest(unittest.TestCase):
