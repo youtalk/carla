@@ -32,8 +32,9 @@ line -- is cloned with its node order reversed and the lanelet is re-pointed at
 the clone. A way shared as one lanelet's left and its neighbour's right is a
 normal same-direction boundary and is never touched. Node ids are preserved, so
 lanelet connectivity (shared first/last nodes) is unchanged. Lanelets whose
-misorientation cannot be attributed to a single shared bound are reported, not
-guessed.
+misorientation cannot be attributed to a single shared bound -- none shared,
+two shared, or a shared bound with no correctly oriented user to take the true
+direction from -- are reported, not guessed.
 """
 from __future__ import annotations
 
@@ -51,13 +52,23 @@ class FixReport:
 
 
 def _node_xy(root) -> dict[str, tuple[float, float]]:
+    """Metric node positions, keyed by node id.
+
+    ``local_x``/``local_y`` is the authoritative source: it is what Autoware's
+    *Local* map projector reads and what every bound way in a CARLA-generated
+    map carries. The ``lon``/``lat`` branch is an untested last resort for
+    foreign maps -- it treats degrees as Cartesian metres without scaling
+    longitude by ``cos(lat)``, which stretches the x axis and can therefore
+    flip the sign of the bound-vs-bound dot product for a near-diagonal pair.
+    Do not rely on a verdict that came from it.
+    """
     out = {}
     for n in root.findall("node"):
         tags = {t.get("k"): t.get("v") for t in n.findall("tag")}
         if "local_x" in tags and "local_y" in tags:
             out[n.get("id")] = (float(tags["local_x"]), float(tags["local_y"]))
         elif n.get("lon") is not None and n.get("lat") is not None:
-            out[n.get("id")] = (float(n.get("lon")), float(n.get("lat")))  # direction only
+            out[n.get("id")] = (float(n.get("lon")), float(n.get("lat")))
     return out
 
 
@@ -122,21 +133,29 @@ def fix_shared_bounds(root) -> FixReport:
     # A way legitimately shared between same-direction neighbours is the LEFT
     # of one lanelet and the RIGHT of the other. A way used in the SAME role by
     # two lanelets is the un-inverted centre line of an opposing pair.
-    same_role_users: dict[tuple[str, str], int] = {}
-    for _, left, right in _lanelet_bounds(root):
-        same_role_users[("left", left)] = same_role_users.get(("left", left), 0) + 1
-        same_role_users[("right", right)] = same_role_users.get(("right", right), 0) + 1
+    same_role_users: dict[tuple[str, str], list[str]] = {}
+    for rel, left, right in _lanelet_bounds(root):
+        same_role_users.setdefault(("left", left), []).append(rel.get("id"))
+        same_role_users.setdefault(("right", right), []).append(rel.get("id"))
     next_id = _next_free_id(root)
     for rel, left, right in _lanelet_bounds(root):
         lid = rel.get("id")
         if lid not in bad:
             continue
         culprits = [(role, way) for role, way in (("left", left), ("right", right))
-                    if same_role_users.get((role, way), 0) > 1]
+                    if len(same_role_users.get((role, way), ())) > 1]
         if len(culprits) != 1:  # none: private reversed way; two: no single culprit
             report.unresolved.append(lid)
             continue
         role, old_id = culprits[0]
+        # Reversing the clone is only justified because the way's emitted
+        # direction is correct for its OTHER same-role user. Without a
+        # correctly oriented user there is no reference direction, and a false
+        # positive from the chord test (a hairpin lanelet) would be "repaired"
+        # into a genuinely broken map. Report those instead.
+        if all(user in bad for user in same_role_users[(role, old_id)]):
+            report.unresolved.append(lid)
+            continue
         src = ways[old_id]
         clone = ET.Element("way", dict(src.attrib))
         clone.set("id", str(next_id))
@@ -161,6 +180,8 @@ def main(argv=None) -> int:
     g.add_argument("--fix", action="store_true", help="repair in place (or to --out)")
     p.add_argument("--out", help="output path for --fix (default: overwrite input)")
     a = p.parse_args(argv)
+    if a.check and a.out:
+        p.error("--out applies to --fix only")
     tree = ET.parse(a.osm)
     root = tree.getroot()
     before = misoriented_lanelets(root)
