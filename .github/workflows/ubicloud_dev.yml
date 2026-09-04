@@ -1,0 +1,17 @@
+name: Ubicloud-Dev
+
+on:
+  push:
+    branches: [ue58-dev]
+  workflow_dispatch:
+
+concurrency:
+  group: ubicloud-dev-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Ubuntu 24.04
+    uses: ./.github/workflows/_ci-ubicloud.yml
+    with:
+      ubuntu-version: "24.04"

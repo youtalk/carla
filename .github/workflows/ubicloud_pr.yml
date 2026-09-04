@@ -1,0 +1,31 @@
+name: Ubicloud-PR
+
+# Fork-only CI (youtalk/carla). No base-branch filter on purpose: stacked PRs
+# whose base is another feature branch must run too. The workflow files live
+# on the fork's ue58-dev, so every merge ref against it or its descendants
+# carries them.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: ubicloud-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Ubuntu 24.04
+    uses: ./.github/workflows/_ci-ubicloud.yml
+    with:
+      ubuntu-version: "24.04"
+  tools:
+    name: Python tools and shell scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pytest numpy
+      - run: python -m pytest PythonAPI/examples/av_stacks/autoware/map_tools/tests -q
+      - run: sudo apt-get update && sudo apt-get install -y shellcheck && shellcheck -S warning PythonAPI/examples/av_stacks/autoware/run/*.sh PythonAPI/examples/av_stacks/autoware/install/*.sh PythonAPI/examples/av_stacks/autoware/map_tools/*.sh

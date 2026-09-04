@@ -13,6 +13,9 @@ concurrency:
 jobs:
   ubuntu-dev:
     name: Ubuntu Dev
+    # The self-hosted GPU runner only exists upstream; the youtalk fork runs dev
+    # CI on Ubicloud via ubicloud_dev.yml, so skip this job on the fork.
+    if: ${{ github.repository == 'carla-simulator/carla' }}
     uses: ./.github/workflows/_ci-ubuntu.yml
     secrets:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
