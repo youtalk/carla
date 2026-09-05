@@ -188,6 +188,33 @@ pinned deps from `map_tools/requirements.txt` in a venv — see
 `map_tools/README.md`, which also covers fully offline conversion
 (`generate_lanelet2_map.py --xodr <file>`) and resolution options (`--help`).
 
+#### MGRS maps (digital twins)
+
+A digital-twin map whose lanelet2/PCD pair lives in an MGRS local frame
+(`map_projector_info.yaml: projector_type: MGRS`, e.g. the AWSIM
+Nishi-Shinjuku assets) is offset from the CARLA world origin by a constant
+translation. Two things need that constant:
+
+- **The simulator's GNSS.** `sensor.other.autoware_gnss` publishes
+  `/sensing/gnss/pose*` as the sensor's world transform plus the level's MGRS
+  offset, read from the level's `AutowareWorldSettings -> Mgrs Data Asset`
+  (`UMgrsDataAsset::MgrsOffsetPosition`, metres). A level without that asset
+  publishes an unoffset pose and Autoware's initial pose lands off the map.
+- **This script's frame conversion.** Pass the same constant as
+  `--map-origin "X,Y,Z"`; the goal conversion becomes `x_map = X + x,
+  y_map = Y - y` and pre-engage gate 1 compares in the same frame. Without it
+  gate 1 reports a delta of tens of kilometres and refuses to engage.
+
+```bash
+./run/run_carla_autoware.sh --mode classical --town NishishinjukuMap \
+  --map-path ~/autoware_map/nishishinjuku \
+  --map-origin "81655.73,50137.43,42.49998" \
+  --goal "-84.114,117.603,-10.43"
+```
+
+Generate the projector file for such a map with
+`map_tools/write_projector_info.py --projector-type MGRS --mgrs-grid 54SUE`.
+
 ### 3. Run
 
 ```bash
@@ -221,7 +248,9 @@ Classical mode runs Autoware either from your **source workspace**
 the validated path); the default `--stack auto` picks whichever is installed.
 Useful common options: `--goal "x,y,yaw"` (drive there automatically; CARLA
 coordinates, converted for you), `--spawn-index N` (which spawn point the ego
-starts at), `--no-auto` (skip all post-launch automation), `--no-gates` (skip
+starts at), `--map-origin "X,Y,Z"` (map-frame position of the CARLA world
+origin, for MGRS maps; default `0,0,0`), `--no-auto` (skip all post-launch
+automation), `--no-gates` (skip
 the pre-engage safety gates — see below), `--with-rviz` (RViz in a sibling
 container / local `rviz2`),
 `--rmw fastdds|cyclonedds|zenoh` (simulator side; default **fastdds** — see
