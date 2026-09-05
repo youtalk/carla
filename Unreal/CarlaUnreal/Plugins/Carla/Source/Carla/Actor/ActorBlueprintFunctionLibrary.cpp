@@ -1488,6 +1488,23 @@ FActorDefinition UActorBlueprintFunctionLibrary::MakeAutowareGnssDefinition()
   bool Success;
   MakeGnssDefinition(Success, Definition, TEXT("autoware_gnss"));
   check(Success);
+
+  // MGRS offset fallback (metres, Autoware map frame). The level's
+  // UMgrsDataAsset (AAutowareWorldSettings::MgrsDataAssetSoftPtr) stays the
+  // primary source; these are read only when the level has none, so an
+  // imported map can pair with an MGRS lanelet2/PCD set without content
+  // edits. Declared Float so the client validates the value as a number.
+  for (const TCHAR *Id : {TEXT("mgrs_offset_x"), TEXT("mgrs_offset_y"), TEXT("mgrs_offset_z")})
+  {
+    FActorVariation Var;
+    Var.Id = Id;
+    Var.Type = EActorAttributeType::Float;
+    Var.RecommendedValues = {TEXT("0.0")};
+    Var.bRestrictToRecommended = false;
+    Definition.Variations.Emplace(Var);
+  }
+  Success = CheckActorDefinition(Definition);
+  check(Success);
   return Definition;
 }
 
@@ -2377,6 +2394,16 @@ void UActorBlueprintFunctionLibrary::SetGnss(
       RetrieveActorAttributeToFloat("noise_alt_bias", Description.Variations, 0.0f));
 }
 
+// MGRS offsets are ~1e5 m; FCString::Atof would resolve them only to ~8 mm,
+// so read the wire value and parse as double.
+static double MgrsOffsetComponent(
+    const TMap<FString, FActorAttribute> &Attributes,
+    const FString &Id)
+{
+  const FActorAttribute *Attribute = Attributes.Find(Id);
+  return Attribute ? FCString::Atod(*Attribute->Value) : 0.0;
+}
+
 void UActorBlueprintFunctionLibrary::SetAutowareGnss(
     const FActorDescription &Description,
     AAutowareGnssSensor *Gnss)
@@ -2404,6 +2431,11 @@ void UActorBlueprintFunctionLibrary::SetAutowareGnss(
       RetrieveActorAttributeToFloat("noise_lon_bias", Description.Variations, 0.0f));
   Gnss->SetAltitudeBias(
       RetrieveActorAttributeToFloat("noise_alt_bias", Description.Variations, 0.0f));
+
+  Gnss->SetMgrsOffsetFallback(FVector(
+      MgrsOffsetComponent(Description.Variations, TEXT("mgrs_offset_x")),
+      MgrsOffsetComponent(Description.Variations, TEXT("mgrs_offset_y")),
+      MgrsOffsetComponent(Description.Variations, TEXT("mgrs_offset_z"))));
 }
 
 void UActorBlueprintFunctionLibrary::SetIMU(
