@@ -248,9 +248,10 @@ Classical mode runs Autoware either from your **source workspace**
 the validated path); the default `--stack auto` picks whichever is installed.
 Useful common options: `--goal "x,y,yaw"` (drive there automatically; CARLA
 coordinates, converted for you), `--spawn-index N` (which spawn point the ego
-starts at), `--map-origin "X,Y,Z"` (map-frame position of the CARLA world
-origin, for MGRS maps; default `0,0,0`), `--no-auto` (skip all post-launch
-automation), `--no-gates` (skip
+starts at), `--spawn-pose "X,Y,Z,YAW"` (exact CARLA spawn transform for maps
+without usable spawn points; Z is the ground height), `--map-origin "X,Y,Z"`
+(map-frame position of the CARLA world origin, for MGRS maps; default
+`0,0,0`), `--no-auto` (skip all post-launch automation), `--no-gates` (skip
 the pre-engage safety gates — see below), `--with-rviz` (RViz in a sibling
 container / local `rviz2`),
 `--rmw fastdds|cyclonedds|zenoh` (simulator side; default **fastdds** — see

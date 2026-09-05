@@ -702,6 +702,16 @@ def parse_timeout(value):
     return seconds
 
 
+def parse_spawn_pose(text):
+    """'X,Y,Z,YAW' in CARLA metres and degrees -> carla.Transform (for --spawn_pose)."""
+    try:
+        x, y, z, yaw = (float(v) for v in text.split(','))
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(
+            f"--spawn_pose expects 'X,Y,Z,YAW' (CARLA metres, degrees), got {text!r}") from error
+    return carla.Transform(carla.Location(x=x, y=y, z=z), carla.Rotation(yaw=yaw))
+
+
 def main():
     argparser = argparse.ArgumentParser(
         description='CARLA Autoware sensor-kit demo')
@@ -756,6 +766,12 @@ def main():
         '--spawn_index', type=int, default=None,
         help='Index into the ego spawn point list; random choice if omitted.')
     argparser.add_argument(
+        '--spawn_pose', type=parse_spawn_pose, default=None, metavar='X,Y,Z,YAW',
+        help="Spawn the ego at this exact CARLA transform (metres, degrees) instead of a "
+             "spawn point -- for imported maps whose spawn points are missing or off-lane. "
+             "Z must be the ground height (see the av_stacks/autoware README). Overrides "
+             "--spawn_index.")
+    argparser.add_argument(
         '--timeout', type=parse_timeout, default=60.0,
         help='RPC timeout in seconds (default: 60). A cold simulator start on UE 5.8 can '
              'take longer than a minute to answer get_world(); raise this when the map is '
@@ -794,22 +810,27 @@ def main():
         f"\tpure step execution: {time_step_info.is_pure_step_execution_enabled()}"
     )
 
-    # Spawn Ego. Prefer the level's dedicated ego spawn points (Autoware-port
-    # RPC); fall back to the map's regular spawn points when the API or the
-    # server-side RPC is unavailable.
-    spawn_points = []
-    try:
-        spawn_points = world.get_ego_spawn_points()
-    except (AttributeError, RuntimeError) as error:
-        log_warning(f"get_ego_spawn_points unavailable ({error}); using map spawn points")
-    if not spawn_points:
-        spawn_points = world.get_map().get_spawn_points()
-    if not spawn_points:
-        raise RuntimeError("No spawn points available. Load a map that provides spawn points.")
-    if args.spawn_index is not None:
-        spawn_point = spawn_points[args.spawn_index % len(spawn_points)]
+    # Spawn Ego. An explicit --spawn_pose wins; otherwise prefer the level's
+    # dedicated ego spawn points (Autoware-port RPC) and fall back to the map's
+    # regular spawn points when the API or the server-side RPC is unavailable.
+    if args.spawn_pose is not None:
+        spawn_point = args.spawn_pose
+        log_info(f"Spawning ego at --spawn_pose {spawn_point}")
     else:
-        spawn_point = random.choice(spawn_points)
+        spawn_points = []
+        try:
+            spawn_points = world.get_ego_spawn_points()
+        except (AttributeError, RuntimeError) as error:
+            log_warning(f"get_ego_spawn_points unavailable ({error}); using map spawn points")
+        if not spawn_points:
+            spawn_points = world.get_map().get_spawn_points()
+        if not spawn_points:
+            raise RuntimeError("No spawn points available. Load a map that provides spawn "
+                               "points, or pass --spawn_pose X,Y,Z,YAW.")
+        if args.spawn_index is not None:
+            spawn_point = spawn_points[args.spawn_index % len(spawn_points)]
+        else:
+            spawn_point = random.choice(spawn_points)
     ego = spawn_ego_with_sensors(world, spawn_point, args)
 
     world.tick()  # tick to process the changes (settings, ego + sensors spawn)

@@ -95,6 +95,7 @@ NO_WHEEL_CHECK=false   # skip the installed-vs-this-tree carla wheel provenance 
 GOAL=""
 MAP_ORIGIN="0,0,0"            # map-frame position of the CARLA world origin (see --map-origin)
 SPAWN_INDEX=""                # autoware_demo.py --spawn_index passthrough (e2e default: 52)
+SPAWN_POSE=""                 # autoware_demo.py --spawn_pose passthrough
 LOG_DIR="$SCRIPT_DIR/logs"
 RPC_PORT=2000
 CARLA_HOST=127.0.0.1
@@ -154,6 +155,11 @@ Usage: $(basename "$0") --mode classical|e2e [options]
                          the Town10 outer ring, which loops; VAD has NO route
                          input (fixed LANE_FOLLOW command), so a road that ends
                          in a T-junction wedges the car at the dead end.
+  --spawn-pose "X,Y,Z,YAW" spawn the ego at this exact CARLA transform (m, m, m,
+                         deg; passed to autoware_demo.py as --spawn_pose) instead
+                         of a spawn point. For imported maps whose spawn points
+                         are missing or off-lane. Mutually exclusive with
+                         --spawn-index. Z is the ground height at (X, Y).
   --no-auto              skip post-launch automation entirely (classical:
                          localization init / goal / engage; e2e: auto-engage)
   --no-recover           e2e: the drive keeper only logs collisions/wedges,
@@ -205,6 +211,7 @@ while [[ $# -gt 0 ]]; do
         --goal)         GOAL="$2"; shift 2 ;;
         --map-origin)   MAP_ORIGIN="$2"; shift 2 ;;
         --spawn-index)  SPAWN_INDEX="$2"; shift 2 ;;
+        --spawn-pose)   SPAWN_POSE="$2"; shift 2 ;;
         --no-auto)      NO_AUTO=true; shift ;;
         --no-gates)     NO_GATES=true; shift ;;
         --no-recover)   NO_RECOVER=true; shift ;;
@@ -247,6 +254,10 @@ esac
     || { echo "ERROR: --map-origin must be \"X,Y,Z\" (metres; got: '$MAP_ORIGIN')" >&2; exit 2; }
 [[ -z "$SPAWN_INDEX" || "$SPAWN_INDEX" =~ ^[0-9]+$ ]] \
     || { echo "ERROR: --spawn-index must be a number (got: '$SPAWN_INDEX')" >&2; exit 2; }
+[[ -z "$SPAWN_POSE" || "$SPAWN_POSE" =~ ^-?[0-9.]+,-?[0-9.]+,-?[0-9.]+,-?[0-9.]+$ ]] \
+    || { echo "ERROR: --spawn-pose must be \"X,Y,Z,YAW\" (CARLA metres, degrees; got: '$SPAWN_POSE')" >&2; exit 2; }
+[[ -z "$SPAWN_POSE" || -z "$SPAWN_INDEX" ]] \
+    || { echo "ERROR: --spawn-pose and --spawn-index are mutually exclusive" >&2; exit 2; }
 
 # Prebuilt autoware-contents maps are named Town01..Town10HD (no _Opt suffix).
 TOWN_BASE="${TOWN%_Opt}"
@@ -954,11 +965,11 @@ else:
 # input exists in the integration), so only looping roads sustain a demo --
 # spawn 52 sits on the Town10 outer ring. A dead-end spawn (e.g. 41's road,
 # which T-terminates) wedges the car at the road end.
-if [[ "$MODE" == "e2e" && -z "$SPAWN_INDEX" ]]; then
+if [[ "$MODE" == "e2e" && -z "$SPAWN_INDEX" && -z "$SPAWN_POSE" ]]; then
     SPAWN_INDEX=52
     log "e2e: defaulting to ring spawn --spawn-index 52 (LANE_FOLLOW needs a looping road)"
 fi
-start_proc autoware_demo "exec '$CARLA_PY' '$AUTOWARE_DEMO' --host $CARLA_HOST --port $RPC_PORT --hz_rate 20 --resync${SPAWN_INDEX:+ --spawn_index $SPAWN_INDEX}"
+start_proc autoware_demo "exec '$CARLA_PY' '$AUTOWARE_DEMO' --host $CARLA_HOST --port $RPC_PORT --hz_rate 20 --resync${SPAWN_INDEX:+ --spawn_index $SPAWN_INDEX}${SPAWN_POSE:+ --spawn_pose='$SPAWN_POSE'}"
 pause 5 "let autoware_demo.py spawn the ego before attaching more sensors"
 
 # ------------------------------------------------- 4+5. e2e-only glue procs --
