@@ -200,6 +200,11 @@ translation. Two things need that constant:
   offset, read from the level's `AutowareWorldSettings -> Mgrs Data Asset`
   (`UMgrsDataAsset::MgrsOffsetPosition`, metres). A level without that asset
   publishes an unoffset pose and Autoware's initial pose lands off the map.
+  When you cannot edit the level (packaged content, a map you do not own),
+  set the offset on the sensor instead: `sensor.other.autoware_gnss` takes
+  `mgrs_offset_x/y/z` (metres); `autoware_demo.py --mgrs_offset "X,Y,Z"`
+  sets them, and `run_carla_autoware.sh --map-origin` forwards its value.
+  The level's data asset always wins when both are present.
 - **This script's frame conversion.** Pass the same constant as
   `--map-origin "X,Y,Z"`; the goal conversion becomes `x_map = X + x,
   y_map = Y - y` and pre-engage gate 1 compares in the same frame. Without it

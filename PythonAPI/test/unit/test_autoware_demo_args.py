@@ -34,5 +34,15 @@ class TestSpawnPose(unittest.TestCase):
             autoware_demo.parse_spawn_pose("1,2,x,4")
 
 
+class TestMgrsOffset(unittest.TestCase):
+    def test_three_fields(self):
+        self.assertEqual(autoware_demo.parse_mgrs_offset("81655.73,50137.43,42.49998"),
+                         (81655.73, 50137.43, 42.49998))
+
+    def test_wrong_arity_is_an_argument_error(self):
+        with self.assertRaises(argparse.ArgumentTypeError):
+            autoware_demo.parse_mgrs_offset("1,2")
+
+
 if __name__ == "__main__":
     unittest.main()

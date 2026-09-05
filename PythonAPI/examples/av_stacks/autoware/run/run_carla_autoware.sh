@@ -149,6 +149,8 @@ Usage: $(basename "$0") --mode classical|e2e [options]
                          For an MGRS map pass the level's MGRS offset (e.g. the
                          Nishi-Shinjuku AWSIM assets: 81655.73,50137.43,42.49998).
                          Used by the goal conversion and by pre-engage gate 1.
+                         Also forwarded to autoware_demo.py as --mgrs_offset (the
+                         GNSS fallback when the level has no MGRS data asset).
   --spawn-index N        spawn the ego at this spawn point index (passed to
                          autoware_demo.py as --spawn_index). classical default:
                          the demo's own default. e2e default: 52 -- a spawn on
@@ -969,7 +971,9 @@ if [[ "$MODE" == "e2e" && -z "$SPAWN_INDEX" && -z "$SPAWN_POSE" ]]; then
     SPAWN_INDEX=52
     log "e2e: defaulting to ring spawn --spawn-index 52 (LANE_FOLLOW needs a looping road)"
 fi
-start_proc autoware_demo "exec '$CARLA_PY' '$AUTOWARE_DEMO' --host $CARLA_HOST --port $RPC_PORT --hz_rate 20 --resync${SPAWN_INDEX:+ --spawn_index $SPAWN_INDEX}${SPAWN_POSE:+ --spawn_pose='$SPAWN_POSE'}"
+MGRS_OFFSET_ARG=""
+[[ "$MAP_ORIGIN" == "0,0,0" ]] || MGRS_OFFSET_ARG=" --mgrs_offset='$MAP_ORIGIN'"
+start_proc autoware_demo "exec '$CARLA_PY' '$AUTOWARE_DEMO' --host $CARLA_HOST --port $RPC_PORT --hz_rate 20 --resync${SPAWN_INDEX:+ --spawn_index $SPAWN_INDEX}${SPAWN_POSE:+ --spawn_pose='$SPAWN_POSE'}$MGRS_OFFSET_ARG"
 pause 5 "let autoware_demo.py spawn the ego before attaching more sensors"
 
 # ------------------------------------------------- 4+5. e2e-only glue procs --

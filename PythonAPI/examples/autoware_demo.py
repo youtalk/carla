@@ -330,7 +330,7 @@ def generate_imu_blueprint(blueprint_library):
     return blueprint
 
 
-def generate_gnss_blueprint(blueprint_library, is_mgrs_enabled):
+def generate_gnss_blueprint(blueprint_library, is_mgrs_enabled, mgrs_offset=None):
     """Generates a blueprint for GNSS"""
 
     sensor_name = "sensor.other.autoware_gnss" if is_mgrs_enabled else "sensor.other.gnss"
@@ -360,6 +360,15 @@ def generate_gnss_blueprint(blueprint_library, is_mgrs_enabled):
     blueprint.set_attribute("ros_name", "map")  # frame_id
     try_set_ros_topic_name(blueprint, "/sensing/gnss")
 
+    if mgrs_offset is not None and is_mgrs_enabled:
+        if blueprint.has_attribute("mgrs_offset_x"):
+            for name, value in zip(("mgrs_offset_x", "mgrs_offset_y", "mgrs_offset_z"), mgrs_offset):
+                blueprint.set_attribute(name, repr(value))
+        else:
+            log_warning(
+                "Blueprint has no 'mgrs_offset_*' attributes; --mgrs_offset ignored "
+                "(server predates the MGRS fallback?)")
+
     return blueprint
 
 
@@ -379,7 +388,7 @@ def spawn_sensors(world, base_link, ego, args):
     traffic_light_camera_blueprint \
         = generate_traffic_light_camera_blueprint(blueprint_library)
     imu_blueprint = generate_imu_blueprint(blueprint_library)
-    gnss_receiver_blueprint = generate_gnss_blueprint(blueprint_library, args.mgrs_off)
+    gnss_receiver_blueprint = generate_gnss_blueprint(blueprint_library, args.mgrs_off, args.mgrs_offset)
 
     base_link_to_sensor_kit_transform = ROS2.Transform(
         x=0.9,
@@ -712,6 +721,16 @@ def parse_spawn_pose(text):
     return carla.Transform(carla.Location(x=x, y=y, z=z), carla.Rotation(yaw=yaw))
 
 
+def parse_mgrs_offset(text):
+    """'X,Y,Z' metres in the Autoware map frame -> tuple (for --mgrs_offset)."""
+    try:
+        x, y, z = (float(v) for v in text.split(','))
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(
+            f"--mgrs_offset expects 'X,Y,Z' (metres, Autoware map frame), got {text!r}") from error
+    return (x, y, z)
+
+
 def main():
     argparser = argparse.ArgumentParser(
         description='CARLA Autoware sensor-kit demo')
@@ -759,6 +778,11 @@ def main():
     argparser.add_argument(
         '--mgrs_off', action='store_false',
         help='Disable application of MGRS offset.')
+    argparser.add_argument(
+        '--mgrs_offset', type=parse_mgrs_offset, default=None, metavar='X,Y,Z',
+        help="MGRS offset (metres, Autoware map frame) for sensor.other.autoware_gnss when the "
+             "level has no MgrsDataAsset in its WorldSettings; the server ignores it when the "
+             "level provides one. Same value as run_carla_autoware.sh --map-origin.")
     argparser.add_argument(
         '--list_maps', action='store_true',
         help='Lists only available maps and exit. Omit applying world setting and ego spawn.')

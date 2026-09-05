@@ -89,6 +89,12 @@ void AAutowareGnssSensor::PostPhysTick(UWorld *World, ELevelTick TickType, float
       MgrsOffsetPosition[1] = static_cast<double>(MgrsDataAsset->MgrsOffsetPosition.Y);
       MgrsOffsetPosition[2] = static_cast<double>(MgrsDataAsset->MgrsOffsetPosition.Z);
     }
+    else if (bHasMgrsOffsetFallback)
+    {
+      MgrsOffsetPosition[0] = MgrsOffsetFallback.X;
+      MgrsOffsetPosition[1] = MgrsOffsetFallback.Y;
+      MgrsOffsetPosition[2] = MgrsOffsetFallback.Z;
+    }
 
     if (ParentActor)
     {
@@ -117,26 +123,49 @@ void AAutowareGnssSensor::LoadMgrsData()
 
   if (const auto* WS = Cast<AAutowareWorldSettings>(GetWorld()->GetWorldSettings()))
   {
-    if (WS->MgrsDataAssetSoftPtr.IsNull())
+    if (!WS->MgrsDataAssetSoftPtr.IsNull())
     {
-      UE_LOG(LogCarla, Warning, TEXT("MGRS Data Asset SoftPtr not set in WorldSettings."));
-      return;
+      UMgrsDataAsset* Data = WS->MgrsDataAssetSoftPtr.Get();
+      if (!IsValid(Data))
+      {
+        Data = WS->MgrsDataAssetSoftPtr.LoadSynchronous();
+      }
+      MgrsDataAsset = Data;
     }
-
-    UMgrsDataAsset* Data = WS->MgrsDataAssetSoftPtr.Get();
-    if (!IsValid(Data))
-    {
-      Data = WS->MgrsDataAssetSoftPtr.LoadSynchronous();
-    }
-
-    MgrsDataAsset = Data;
   }
+
+  if (MgrsDataAsset)
+  {
+    UE_LOG(LogCarla, Log, TEXT("AutowareGnssSensor: MGRS offset from level data asset (%f, %f, %f)"),
+        MgrsDataAsset->MgrsOffsetPosition.X, MgrsDataAsset->MgrsOffsetPosition.Y, MgrsDataAsset->MgrsOffsetPosition.Z);
+    if (bHasMgrsOffsetFallback)
+    {
+      UE_LOG(LogCarla, Warning, TEXT("AutowareGnssSensor: level data asset present; ignoring blueprint mgrs_offset (%f, %f, %f)"),
+          MgrsOffsetFallback.X, MgrsOffsetFallback.Y, MgrsOffsetFallback.Z);
+    }
+    return;
+  }
+
+  if (bHasMgrsOffsetFallback)
+  {
+    UE_LOG(LogCarla, Log, TEXT("AutowareGnssSensor: no MGRS data asset in WorldSettings; using blueprint mgrs_offset fallback (%f, %f, %f)"),
+        MgrsOffsetFallback.X, MgrsOffsetFallback.Y, MgrsOffsetFallback.Z);
+    return;
+  }
+
+  UE_LOG(LogCarla, Warning, TEXT("MGRS Data Asset SoftPtr not set in WorldSettings."));
 }
 
 void AAutowareGnssSensor::Set(const FActorDescription &ActorDescription)
 {
   Super::Set(ActorDescription);
   UActorBlueprintFunctionLibrary::SetAutowareGnss(ActorDescription, this);
+}
+
+void AAutowareGnssSensor::SetMgrsOffsetFallback(const FVector &OffsetMeters)
+{
+  MgrsOffsetFallback = OffsetMeters;
+  bHasMgrsOffsetFallback = !OffsetMeters.IsNearlyZero();
 }
 
 void AAutowareGnssSensor::SetLatitudeDeviation(float Value)

@@ -62,6 +62,12 @@ public:
   UFUNCTION(BlueprintCallable)
   void LoadMgrsData();
 
+  /// Fallback MGRS offset (metres, Autoware map frame) from the blueprint
+  /// attributes mgrs_offset_x/y/z. Used only when the level provides no
+  /// UMgrsDataAsset through AAutowareWorldSettings; the data asset stays the
+  /// primary source so content-side georeferencing is never overridden.
+  void SetMgrsOffsetFallback(const FVector &OffsetMeters);
+
 protected:
 
   virtual void BeginPlay() override;
@@ -75,6 +81,10 @@ private:
 
   UPROPERTY()
   TObjectPtr<UMgrsDataAsset> MgrsDataAsset = nullptr;
+
+  FVector MgrsOffsetFallback = FVector::ZeroVector;
+
+  bool bHasMgrsOffsetFallback = false;
 
   carla::geom::GeoProjection CurrentGeoProjection;
 
