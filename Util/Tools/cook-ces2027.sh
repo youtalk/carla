@@ -38,7 +38,8 @@ cmake --preset Release -DENABLE_ROS2=ON -DCARLA_MAPS_TO_COOK="$MAP" \
 cmake --build Build/Release --target package >> "$log" 2>&1 || fail package
 
 pkg=$ROOT/Build/Release/Package/Carla-0.10.0-Linux-Shipping
-[ -x "$pkg/CarlaUnreal.sh" ] || fail no_launcher
+# launcher lives under Linux/ while wheel and sha stamp sit at package root
+[ -x "$pkg/Linux/CarlaUnreal.sh" ] || fail no_launcher
 ls "$pkg"/PythonAPI/carla/dist/carla-*cp312*.whl >/dev/null 2>&1 || fail no_cp312_wheel
 echo "$sha" > "$pkg/ces2027-package-sha.txt" || fail sha_write
 echo "COOK_PASS package=$pkg sha=$sha"
