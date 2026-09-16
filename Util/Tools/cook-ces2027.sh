@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# Cook the CES 2027 CARLA package: Town04_Opt only, native ROS 2 on, daytime
-# lighting authored first (Town04_Opt ships dark and VisionPilot cannot see its
-# lanes). Writes ces2027-package-sha.txt into the package so a run script can
-# print which fork commit the package came from; a package silently misses
-# every simulator fix made after it was cooked.
+# Cook the CES 2027 CARLA package: Town04_Opt only, native ROS 2 on. Writes
+# ces2027-package-sha.txt into the package so a run script can print which fork
+# commit the package came from; a package silently misses every simulator fix
+# made after it was cooked. Daylight is set at runtime through CARLA's weather
+# API rather than baked into the map, because the map-authoring tool does not
+# work on UE 5.8.
 #
 #   cook-ces2027.sh --check   validate the environment, build nothing
-#   cook-ces2027.sh           author + configure + package (hours)
+#   cook-ces2027.sh           configure + package (hours)
 #
 # Markers: COOK_CHECK_PASS | COOK_PASS package=<dir> sha=<sha> | COOK_FAIL reason=<slug>
 set -uo pipefail
@@ -28,17 +29,7 @@ sha=$(git rev-parse HEAD) || fail sha
 log=Build/cook-ces2027-$(date +%Y%m%d-%H%M%S).log
 echo "cook: sha=$sha log=$log"
 
-# 1. daytime lighting, judged by the "saved" line, not the exit code
-#    (author_map_sky.py's header: the commandlet's shader worker can crash after the save)
-MODE=apply-native TARGET_MAP=$MAP SKYLIGHT_INTENSITY=1.0 SUN_INTENSITY=20000 \
-  timeout 900 "$UE/Engine/Binaries/Linux/UnrealEditor" "$ROOT/Unreal/CarlaUnreal/CarlaUnreal.uproject" \
-  -run=pythonscript -script="$ROOT/Util/Tools/author_map_sky.py" \
-  -unattended -nosplash -stdout -FullStdOutLogOutput -AllowCommandletRendering > "$log.author" 2>&1
-author_out=$(cat "$log.author")
-grep -q 'author_map_sky.*saved' <<<"$author_out" || fail map_sky_not_saved
-grep -q 'author_map_sky.*WARNING' <<<"$author_out" && fail map_sky_partial
-
-# 2. configure + package
+# 1. configure + package
 cmake --preset Release -DENABLE_ROS2=ON -DCARLA_MAPS_TO_COOK="$MAP" \
   -DPython3_EXECUTABLE="$PY" >> "$log" 2>&1 || fail configure
 cmake --build Build/Release --target package >> "$log" 2>&1 || fail package
