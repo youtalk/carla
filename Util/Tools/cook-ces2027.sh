@@ -23,7 +23,8 @@ command -v ninja >/dev/null || fail ninja_missing
 if [ "${1:-}" = --check ]; then echo "COOK_CHECK_PASS engine=$UE python=$PY"; exit 0; fi
 
 cd "$ROOT" || fail chdir
-sha=$(git rev-parse HEAD); [ -z "$(git status --porcelain)" ] || sha="$sha-dirty"
+sha=$(git rev-parse HEAD) || fail sha
+[ -z "$(git status --porcelain)" ] || sha="$sha-dirty"
 log=Build/cook-ces2027-$(date +%Y%m%d-%H%M%S).log
 echo "cook: sha=$sha log=$log"
 
@@ -45,5 +46,5 @@ cmake --build Build/Release --target package >> "$log" 2>&1 || fail package
 pkg=$ROOT/Build/Release/Package/Carla-0.10.0-Linux-Shipping
 [ -x "$pkg/CarlaUnreal.sh" ] || fail no_launcher
 ls "$pkg"/PythonAPI/carla/dist/carla-*cp312*.whl >/dev/null 2>&1 || fail no_cp312_wheel
-echo "$sha" > "$pkg/ces2027-package-sha.txt"
+echo "$sha" > "$pkg/ces2027-package-sha.txt" || fail sha_write
 echo "COOK_PASS package=$pkg sha=$sha"
