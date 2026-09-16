@@ -11,6 +11,9 @@
 #
 # Markers: COOK_CHECK_PASS | COOK_PASS package=<dir> sha=<sha> | COOK_FAIL reason=<slug>
 set -uo pipefail
+# cmake's libarchive refuses non-ASCII pathnames when LC_CTYPE is not a valid
+# UTF-8 locale; pin C.UTF-8 so multi-hour builds never depend on caller's locale
+export LC_ALL=C.UTF-8
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 MAP=/Game/Carla/Maps/Town04_Opt
 fail() { echo "COOK_FAIL reason=$1"; exit 1; }
